@@ -1,0 +1,6 @@
+{
+  "name": "АСУ-Республика: 1989–1991",
+  "description": "Историческая свайп-стратегия на советском терминале янтарного кинескопа: проведите республику через шторм перестройки до декабря 1991 года.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,153 @@
+@import "tailwindcss";
+
+@layer base {
+  * {
+    font-family: 'JetBrains Mono', 'IBM Plex Mono', 'Share Tech Mono', monospace;
+    box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
+}
+
+/* CRT Screen Glow and Effects */
+.crt-amber-text {
+  color: #ffb000;
+  text-shadow: 0 0 4px rgba(255, 176, 0, 0.7), 0 0 10px rgba(255, 176, 0, 0.35);
+}
+
+.crt-amber-dim {
+  color: #8c5b0f;
+}
+
+.crt-red-text {
+  color: #ff2a00;
+  text-shadow: 0 0 5px rgba(255, 42, 0, 0.8), 0 0 14px rgba(255, 42, 0, 0.5);
+}
+
+.crt-green-text {
+  color: #33ff33;
+  text-shadow: 0 0 5px rgba(51, 255, 51, 0.8), 0 0 14px rgba(51, 255, 51, 0.5);
+}
+
+/* CRT Glass curved frame and scanline effects */
+.crt-screen-bezel {
+  background: radial-gradient(circle at 50% 50%, #150f08 0%, #0d0905 75%, #050302 100%);
+  box-shadow: 
+    inset 0 0 80px rgba(0, 0, 0, 0.95),
+    inset 0 0 25px rgba(255, 176, 0, 0.1),
+    0 0 0 2px #22160b,
+    0 10px 30px rgba(0, 0, 0, 0.9);
+}
+
+.crt-scanlines {
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.32) 0px,
+    rgba(0, 0, 0, 0.32) 1.5px,
+    transparent 1.5px,
+    transparent 3px
+  );
+  pointer-events: none;
+}
+
+.crt-vignette {
+  background: radial-gradient(circle at center, transparent 65%, rgba(5, 3, 2, 0.85) 100%);
+  pointer-events: none;
+}
+
+/* CRT Subtle Flicker */
+@keyframes crt-flicker {
+  0% { opacity: 0.985; }
+  50% { opacity: 1; }
+  70% { opacity: 0.975; }
+  100% { opacity: 0.99; }
+}
+
+.animate-crt-flicker {
+  animation: crt-flicker 0.15s infinite;
+}
+
+/* CRT Emergency Vignette (Calm red inner glow, strictly no coordinate shake) */
+.crt-emergency-vignette {
+  box-shadow: inset 0 0 65px rgba(255, 42, 0, 0.38), inset 0 0 20px rgba(255, 42, 0, 0.55);
+  pointer-events: none;
+}
+
+/* CRT Turn Off beam collapse */
+@keyframes crt-turn-off {
+  0% {
+    transform: scale(1, 1);
+    filter: brightness(1);
+  }
+  40% {
+    transform: scale(1, 0.004);
+    filter: brightness(3);
+  }
+  80% {
+    transform: scale(0.005, 0.004);
+    filter: brightness(6);
+  }
+  100% {
+    transform: scale(0, 0);
+    opacity: 0;
+  }
+}
+
+.animate-crt-off {
+  animation: crt-turn-off 0.8s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+}
+
+/* CRT Turn On power up */
+@keyframes crt-turn-on {
+  0% {
+    transform: scale(0.05, 0.005);
+    opacity: 0;
+    filter: brightness(4);
+  }
+  35% {
+    transform: scale(1, 0.005);
+    opacity: 0.8;
+    filter: brightness(3);
+  }
+  100% {
+    transform: scale(1, 1);
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
+.animate-crt-on {
+  animation: crt-turn-on 0.6s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+}
+
+/* Custom Scrollbar for Archive Dossier */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0d0905;
+  border-left: 1px solid #3d2607;
+}
+::-webkit-scrollbar-thumb {
+  background: #6e470b;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #ffb000;
+}
+
+/* Teletype TASS Ticker Tape (Smooth horizontal marquee, amber CRT glow) */
+@keyframes teletype-ticker {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+
+.animate-marquee {
+  display: inline-block;
+  white-space: nowrap;
+  animation: teletype-ticker 36s linear infinite;
+  will-change: transform;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
