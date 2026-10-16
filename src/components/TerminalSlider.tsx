@@ -83,12 +83,12 @@ export const TerminalSlider: React.FC<TerminalSliderProps> = ({
 
   return (
     <div
-      className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-1.5 border border-[#3d2607] bg-[#0d0904] font-mono text-xs ${
+      className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 border border-(--term-border-dark) bg-(--term-panel) font-mono text-xs ${
         disabled ? 'opacity-50 pointer-events-none' : ''
       } ${className}`}
     >
       {label && (
-        <span className="font-bold text-[#ffb000] tracking-wide shrink-0">
+        <span className="font-bold text-(--term-main) tracking-wide shrink-0 text-xs">
           {label}
         </span>
       )}
@@ -100,7 +100,7 @@ export const TerminalSlider: React.FC<TerminalSliderProps> = ({
           onClick={handleDecrement}
           disabled={disabled || clampedValue <= 0}
           aria-label="Уменьшить"
-          className="w-8 h-8 flex items-center justify-center border border-[#6e470b] bg-[#160f08] text-[#ffb000] font-black hover:border-[#ffb000] hover:bg-[#ffb000]/15 active:bg-[#ffb000] active:text-black transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed text-sm"
+          className="w-8 h-8 flex items-center justify-center border border-(--term-border) bg-(--term-panel-light) text-(--term-main) font-black hover:border-(--term-main) hover:bg-(--term-main)/15 active:bg-(--term-main) active:text-black transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed text-xs sm:text-sm"
         >
           [-]
         </button>
@@ -115,10 +115,10 @@ export const TerminalSlider: React.FC<TerminalSliderProps> = ({
           aria-valuemax={100}
           aria-valuenow={clampedValue}
           tabIndex={0}
-          className="px-2 py-1 border border-[#6e470b] bg-[#070503] hover:border-[#ffb000]/70 cursor-pointer flex items-center justify-center font-mono tracking-widest text-[#ffb000] text-sm md:text-base transition"
+          className="px-2 py-1 border border-(--term-border) bg-(--term-bg) hover:border-(--term-main) cursor-pointer flex items-center justify-center font-mono tracking-widest text-(--term-main) text-sm transition"
           title={`Шкала: ${clampedValue}% (кликните для выбора)`}
         >
-          <span className="text-[#8c5b0f] mr-0.5">[</span>
+          <span className="text-(--term-dim) mr-0.5">[</span>
           {Array.from({ length: 10 }).map((_, idx) => {
             const isFilled = idx < filledCount;
             return (
@@ -126,15 +126,15 @@ export const TerminalSlider: React.FC<TerminalSliderProps> = ({
                 key={idx}
                 className={
                   isFilled
-                    ? 'text-[#ffb000] font-bold drop-shadow-[0_0_4px_rgba(255,176,0,0.6)]'
-                    : 'text-[#4a341b]'
+                    ? 'text-(--term-main) font-bold'
+                    : 'text-(--term-border-dark)'
                 }
               >
                 {isFilled ? '■' : '□'}
               </span>
             );
           })}
-          <span className="text-[#8c5b0f] ml-0.5">]</span>
+          <span className="text-(--term-dim) ml-0.5">]</span>
         </div>
 
         {/* Increment Button [+] */}
@@ -143,13 +143,13 @@ export const TerminalSlider: React.FC<TerminalSliderProps> = ({
           onClick={handleIncrement}
           disabled={disabled || clampedValue >= 100}
           aria-label="Увеличить"
-          className="w-8 h-8 flex items-center justify-center border border-[#6e470b] bg-[#160f08] text-[#ffb000] font-black hover:border-[#ffb000] hover:bg-[#ffb000]/15 active:bg-[#ffb000] active:text-black transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed text-sm"
+          className="w-8 h-8 flex items-center justify-center border border-(--term-border) bg-(--term-panel-light) text-(--term-main) font-black hover:border-(--term-main) hover:bg-(--term-main)/15 active:bg-(--term-main) active:text-black transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed text-xs sm:text-sm"
         >
           [+]
         </button>
 
         {/* Percentage Label */}
-        <span className="font-extrabold text-[#ffb000] w-12 text-right tracking-wider">
+        <span className="font-extrabold text-(--term-main) w-12 text-right tracking-wider text-xs sm:text-sm">
           {clampedValue}%
         </span>
       </div>

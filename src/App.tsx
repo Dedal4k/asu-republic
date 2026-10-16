@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { terminalAudio } from './audio';
 import { TerminalPortrait } from './portraits';
 import { GAME_CARDS } from './data/cards';
@@ -14,7 +14,6 @@ import {
   Ending,
   PoliticalProfile,
   Stats,
-  StatKey,
   RegionId,
   RegionState,
   LeaderBackgroundId,
@@ -23,19 +22,21 @@ import {
   PoliticalActor,
   StateDecree,
   SectorId,
-  ArchetypeId,
-  ChoiceImpact,
   SystemSettings,
+  CameraFocus,
+  IncomingHotlineCall,
 } from './types';
 import { LEADER_BACKGROUNDS, LEADER_BACKGROUND_LIST, BACKGROUND_ARCHETYPES } from './data/backgrounds';
 import { createInitialNodes } from './data/nodes';
 import { createInitialActors } from './data/actors';
 import { createInitialDecrees } from './data/decrees';
 import { SettingsScreen } from './components/SettingsScreen';
+import { CabinetDeskScene } from './components/CabinetDeskScene';
 import { loadSettings, saveSettings, resetToDefaults, getPhosphorTheme } from './services/settingsStorage';
 
 type ScreenMode = 'menu' | 'candidate' | 'briefing' | 'game' | 'archive' | 'settings' | 'ending';
-type CabinetModule = 'dispatch' | 'map' | 'hotline' | 'kgb' | 'decrees';
+
+const MAX_ATTENTION_POINTS = 2;
 
 const MONTH_NAMES = [
   'ЯНВАРЬ', 'ФЕВРАЛЬ', 'МАРТ', 'АПРЕЛЬ', 'МАЙ', 'ИЮНЬ',
@@ -91,13 +92,6 @@ const INITIAL_REGIONS: Record<RegionId, RegionState> = {
   },
 };
 
-const REGION_META: Record<RegionId, { short: string; riotTitle: string }> = {
-  capital: { short: 'СТОЛ', riotTitle: 'ОСАДА ДОМА СОВЕТОВ' },
-  miners: { short: 'ШАХТ', riotTitle: 'РЕЛЬСОВАЯ БЛОКАДА' },
-  agrarian: { short: 'АГР', riotTitle: 'ПРОДОВОЛЬСТВЕННАЯ БЛОКАДА' },
-  autonomy: { short: 'АВТ', riotTitle: 'ВООРУЖЕННЫЙ МЯТЕЖ' },
-};
-
 function getInitialEconomy(bgId: LeaderBackgroundId): RepublicEconomy {
   switch (bgId) {
     case 'apparatchik':
@@ -113,50 +107,251 @@ function getInitialEconomy(bgId: LeaderBackgroundId): RepublicEconomy {
   }
 }
 
-function getDispatchForMonth(month: number, usedIds: Set<string>): Card {
-  // Fixed historical milestones
-  if (month === 1 && !usedIds.has('act1_tobacco_riot')) {
-    const c = GAME_CARDS.find((x) => x.id === 'act1_tobacco_riot');
-    if (c) return c;
-  }
-  if (month === 7 && !usedIds.has('act1_miner_strike')) {
-    const c = GAME_CARDS.find((x) => x.id === 'act1_miner_strike');
-    if (c) return c;
-  }
-  if (month === 17 && !usedIds.has('act2_declaration_sovereignty')) {
-    const c = GAME_CARDS.find((x) => x.id === 'act2_declaration_sovereignty');
-    if (c) return c;
-  }
-  if (month === 25 && !usedIds.has('act3_pavlov_reform')) {
-    const c = GAME_CARDS.find((x) => x.id === 'act3_pavlov_reform');
-    if (c) return c;
-  }
-  if (month === 27 && !usedIds.has('act3_referendum_1991')) {
-    const c = GAME_CARDS.find((x) => x.id === 'act3_referendum_1991');
-    if (c) return c;
-  }
-  if (month === 32 && !usedIds.has('act3_gkchp_day1_morning')) {
-    const c = GAME_CARDS.find((x) => x.id === 'act3_gkchp_day1_morning');
-    if (c) return c;
-  }
-  if (month === 33 && !usedIds.has('act3_gkchp_day2_yeltsin')) {
-    const c = GAME_CARDS.find((x) => x.id === 'act3_gkchp_day2_yeltsin');
-    if (c) return c;
-  }
-  if (month === 36 && !usedIds.has('act4_belovezha_finale')) {
-    const c = GAME_CARDS.find((x) => x.id === 'act4_belovezha_finale');
+function getDispatchForMonth(
+  month: number,
+  usedIds: Set<string>,
+  activeFlags: Set<string>,
+  regions: Record<RegionId, RegionState>,
+  economy: RepublicEconomy
+): Card {
+  // 1. Fixed historical milestones
+  const milestones: Record<number, string> = {
+    1: 'act1_tobacco_riot',
+    7: 'act1_miner_strike',
+    17: 'act2_declaration_sovereignty',
+    25: 'act3_pavlov_reform',
+    27: 'act3_referendum_1991',
+    32: 'act3_gkchp_day1_morning',
+    33: 'act3_gkchp_day2_yeltsin',
+    36: 'act4_belovezha_finale',
+  };
+
+  const milestoneId = milestones[month];
+  if (milestoneId && !usedIds.has(milestoneId)) {
+    const c = GAME_CARDS.find((x) => x.id === milestoneId);
     if (c) return c;
   }
 
-  // Act selection
+  // 2. Contextual Crisis Cards (if tension >= 65% in a region, prioritize a regional crisis card)
+  const highTensionRegion = (Object.keys(regions) as RegionId[]).find(
+    (rId) => regions[rId].tension >= 65
+  );
+  if (highTensionRegion) {
+    const crisisCard = GAME_CARDS.find(
+      (c) =>
+        !usedIds.has(c.id) &&
+        c.region === highTensionRegion &&
+        (c.isCrisis || c.minTurn === undefined || c.minTurn <= month)
+    );
+    if (crisisCard) return crisisCard;
+  }
+
+  if (economy.shelfSupplyPercent <= 35) {
+    const deficitCard = GAME_CARDS.find(
+      (c) =>
+        !usedIds.has(c.id) &&
+        (c.archetype === 'crisis_deficit' ||
+          c.id.includes('tobacco') ||
+          c.id.includes('ration') ||
+          c.id.includes('deficit'))
+    );
+    if (deficitCard) return deficitCard;
+  }
+
+  // 3. Flags-dependent cards
   const targetAct = month <= 9 ? 1 : month <= 18 ? 2 : month <= 28 ? 3 : 4;
-  const availableInAct = GAME_CARDS.filter((c) => c.act === targetAct && !usedIds.has(c.id));
+  const flagCandidates = GAME_CARDS.filter((c) => {
+    if (usedIds.has(c.id)) return false;
+    if (c.minTurn && month < c.minTurn) return false;
+    if (c.maxTurn && month > c.maxTurn) return false;
+
+    const req = c.requiredFlags || c.requiresFlags;
+    if (req && req.some((f) => !activeFlags.has(f))) return false;
+
+    const ban = c.bannedFlags || c.forbiddenFlags;
+    if (ban && ban.some((f) => activeFlags.has(f))) return false;
+
+    return (req && req.length > 0) || (ban && ban.length > 0);
+  });
+  if (flagCandidates.length > 0) return flagCandidates[0];
+
+  // 4. Regular cards in current act
+  const availableInAct = GAME_CARDS.filter((c) => {
+    if (usedIds.has(c.id)) return false;
+    if (c.act !== targetAct) return false;
+    if (c.minTurn && month < c.minTurn) return false;
+    if (c.maxTurn && month > c.maxTurn) return false;
+    const req = c.requiredFlags || c.requiresFlags;
+    if (req && req.some((f) => !activeFlags.has(f))) return false;
+    const ban = c.bannedFlags || c.forbiddenFlags;
+    if (ban && ban.some((f) => activeFlags.has(f))) return false;
+    return true;
+  });
   if (availableInAct.length > 0) return availableInAct[0];
 
+  // 5. Any available unused card
   const anyAvailable = GAME_CARDS.filter((c) => !usedIds.has(c.id));
   if (anyAvailable.length > 0) return anyAvailable[0];
 
   return GAME_CARDS[0];
+}
+
+function generateIncomingCall(
+  month: number,
+  nodes: Record<string, InfrastructureNode>,
+  actors: Record<string, PoliticalActor>,
+  economy: RepublicEconomy
+): IncomingHotlineCall | null {
+  if (month < 2) return null;
+
+  // 1. Kremlin/Gosplan priority if plan is low
+  if (economy.moscowPlanFulfilled < 60) {
+    return {
+      id: `call_gosplan_${month}`,
+      actorId: 'gosplan',
+      actorName: 'Николай Рыжков',
+      actorTitle: 'ПРЕДСЕДАТЕЛЬ СОВЕТА МИНИСТРОВ СССР',
+      avatar: 'moscow_inspector',
+      subject: 'СРЫВ ГОСУДАРСТВЕННОГО ПЛАНА ПОСТАВОК',
+      dialogue:
+        'Товарищ Первый Секретарь! Докладываю с заседания Политбюро. Ваша республика срывает плановые поставки в союзный фонд! Москва не намерена терпеть экономический сепаратизм. Каковы ваши объяснения?!',
+      options: [
+        {
+          id: 'promise_plan',
+          label: '«Обещаем мобилизовать резервы и закрыть план»',
+          effectNote: 'План +15%, но требуется выделить 10 млн руб на сверхурочные и логистику.',
+          rubleCost: 10,
+          planDelta: 15,
+          loyaltyDelta: 10,
+        },
+        {
+          id: 'reject_pressure',
+          label: '«Союзные фонды истощены, требуем пересмотра квот»',
+          effectNote: 'Отказ от уступок: Москва урезает доверие (-15% союзного плана, +10 к суверенитету).',
+          planDelta: -15,
+          loyaltyDelta: -20,
+        },
+      ],
+    };
+  }
+
+  // 2. Miners strike hotline if mining station is blocked
+  if (nodes.mines_sorting_station?.status === 'blocked') {
+    return {
+      id: `call_koval_${month}`,
+      actorId: 'koval',
+      actorName: 'Степан Коваль',
+      actorTitle: 'ПРЕДСЕДАТЕЛЬ ОБЪЕДИНЕННОГО СТАЧКОМА',
+      avatar: 'miner',
+      subject: 'РЕЛЬСОВАЯ ВОЙНА НА ПОДЪЕЗДНЫХ ПУТЯХ',
+      dialogue:
+        'Первый! Эшелоны с углем стоят на запасных путях. Мужики на путях жгут костры. Либо мы получаем гарантии по мылу, сахару и зарплатам, либо Донбасс и Кузбасс поддержат нас всеобщей стачкой!',
+      options: [
+        {
+          id: 'concede_supplies',
+          label: '«Срочно отгрузить продовольственные пайки шахтерам»',
+          effectNote: 'Полки -10%, но станция немедленно разблокирована, Коваль доволен.',
+          shelfDelta: -10,
+          loyaltyDelta: 20,
+          unblockNodeId: 'mines_sorting_station',
+        },
+        {
+          id: 'threaten_court',
+          label: '«Напомнить об уголовной ответственности за саботаж»',
+          effectNote: 'Резкий рост напряженности в бассейне (+15%), Коваль бросает трубку.',
+          tensionDelta: 15,
+          loyaltyDelta: -25,
+        },
+      ],
+    };
+  }
+
+  // 3. Imminent conspiracy plot (plotProgress >= 2)
+  const conspiringActor = Object.values(actors).find((a) => a.plotProgress >= 2);
+  if (conspiringActor) {
+    if (conspiringActor.id === 'gromov') {
+      return {
+        id: `call_gromov_${month}`,
+        actorId: 'gromov',
+        actorName: 'Виктор Громов',
+        actorTitle: 'ПРЕДСЕДАТЕЛЬ КГБ РЕСПУБЛИКИ',
+        avatar: 'kgb_general',
+        subject: 'ТРЕБОВАНИЕ САНКЦИИ НА ОПЕРАЦИЮ «ГРОЗА»',
+        dialogue:
+          'Товарищ Первый! Лубянка требует наведения порядка. Неформалы и кооператоры перешли все границы. Мне нужны чрезвычайные полномочия для нейтрализации зачинщиков, иначе инициативу перехватит Центр.',
+        options: [
+          {
+            id: 'gromov_ok',
+            label: '«Санкционировать спецоперацию под вашу ответственность»',
+            effectNote: 'Громов лоялен (+20), заговор заморожен, но автократия возрастает (+10).',
+            loyaltyDelta: 20,
+          },
+          {
+            id: 'gromov_deny',
+            label: '«Запретить любые несогласованные аресты»',
+            effectNote: 'Громов затаил обиду (-15 лояльности), заговор продолжает зреть.',
+            loyaltyDelta: -15,
+          },
+        ],
+      };
+    } else if (conspiringActor.id === 'pozharsky') {
+      return {
+        id: `call_pozharsky_${month}`,
+        actorId: 'pozharsky',
+        actorName: 'Олег Пожарский',
+        actorTitle: 'ЛИДЕР ДЕМОКРАТИЧЕСКОГО ДВИЖЕНИЯ',
+        avatar: 'popular_front',
+        subject: 'УЛЬТИМАТУМ НАРОДНОГО ФРОНТА',
+        dialogue:
+          'Господин Первый Секретарь! На площади собираются пятьдесят тысяч человек. Наше терпение исчерпано. Дайте нам час прямого эфира на республиканском телевидении, или мы перейдем к бессрочной забастовке!',
+        options: [
+          {
+            id: 'airtime_grant',
+            label: '«Предоставить эфир на телецентре под надзором цензуры»',
+            effectNote: 'Пожарский согласен на диалог (+15 лояльности), столица успокаивается (-10% tension).',
+            loyaltyDelta: 15,
+            tensionDelta: -10,
+          },
+          {
+            id: 'airtime_deny',
+            label: '«Отключить рубильник телевышки и блокировать площадь»',
+            effectNote: 'Столица накалена (+15% tension), Пожарский форсирует стачку.',
+            tensionDelta: 15,
+            loyaltyDelta: -25,
+          },
+        ],
+      };
+    } else if (conspiringActor.id === 'platonov') {
+      return {
+        id: `call_platonov_${month}`,
+        actorId: 'platonov',
+        actorName: 'Аркадий Платонов',
+        actorTitle: 'ПРЕЗИДЕНТ АССОЦИАЦИИ ДИРЕКТОРОВ',
+        avatar: 'factory_director',
+        subject: 'ПРЯМОЙ ВАЛЮТНЫЙ ВЫХОД НА ЗАПАД',
+        dialogue:
+          'Первый! Заводы встанут без импортного сырья. Мы больше не можем сдавать валютную выручку во Внешэкономбанк. Разрешите директорам оставлять 50% валюты на предприятиях!',
+        options: [
+          {
+            id: 'permit_forex',
+            label: '«Разрешить оставить валюту на балансе заводов»',
+            effectNote: 'Директора лояльны (+20), казна теряет $3М валюты, полки наполняются (+10%).',
+            currencyCost: 3,
+            shelfDelta: 10,
+            loyaltyDelta: 20,
+          },
+          {
+            id: 'deny_forex',
+            label: '«Вся валюта идет только через централизованный бюджет»',
+            effectNote: 'Платонов готовит теневой вывод капитала (-20 лояльности).',
+            loyaltyDelta: -20,
+          },
+        ],
+      };
+    }
+  }
+
+  return null;
 }
 
 export default function App() {
@@ -170,7 +365,7 @@ export default function App() {
 
   // Strategy Cabinet State
   const [currentMonth, setCurrentMonth] = useState<number>(1);
-  const [attentionPoints, setAttentionPoints] = useState<number>(3);
+  const [attentionPoints, setAttentionPoints] = useState<number>(MAX_ATTENTION_POINTS);
   const [economy, setEconomy] = useState<RepublicEconomy>(() => getInitialEconomy('apparatchik'));
   const [stats, setStats] = useState<Stats>({ moscow: 65, people: 40, economy: 50, kgb: 50 });
   const [profile, setProfile] = useState<PoliticalProfile>({ sovereignty: 20, autocracy: 50, market: 25 });
@@ -179,17 +374,19 @@ export default function App() {
   const [actors, setActors] = useState<Record<string, PoliticalActor>>(createInitialActors);
   const [decrees, setDecrees] = useState<StateDecree[]>(createInitialDecrees);
 
-  // Active module in cabinet
-  const [activeModule, setActiveModule] = useState<CabinetModule>('dispatch');
+  // 2.5D Camera Focus
+  const [cameraFocus, setCameraFocus] = useState<CameraFocus>('overview');
 
   // Monthly Urgent Dispatch
   const [usedCardIds, setUsedCardIds] = useState<Set<string>>(new Set());
+  const [activeFlags, setActiveFlags] = useState<Set<string>>(new Set());
   const [urgentDossier, setUrgentDossier] = useState<Card | null>(null);
   const [urgentDossierResolved, setUrgentDossierResolved] = useState<boolean>(false);
   const [lastChoiceStamp, setLastChoiceStamp] = useState<string | null>(null);
 
-  // Selected actor for ВЧ-связь & КГБ
+  // ВЧ-Связь: Incoming Call & Selection
   const [selectedActorId, setSelectedActorId] = useState<string>('koval');
+  const [incomingCall, setIncomingCall] = useState<IncomingHotlineCall | null>(null);
 
   // Logs & History
   const [monthlyLog, setMonthlyLog] = useState<string[]>([]);
@@ -254,7 +451,7 @@ export default function App() {
       'В шахтерских бассейнах назревают забастовки, в столице активизировался Народный Фронт.',
       'Союзный Госплан требует бесперебойного выполнения пятилетки и отгрузки угля.',
       'В вашем распоряжении терминал автоматизированного управления «АСУ-Республика».',
-      'Каждый месяц вы получаете 3 Очка Внимания (ОВ) для директив, ВЧ-связи и агентуры КГБ.',
+      'Каждый месяц вы получаете 2 Очка Внимания (ОВ) для директив, ВЧ-связи и агентуры КГБ.',
       'Ваша цель — удержать республику от экономического и политического краха до конца 1991 года.',
       '------------------------------------------------------------',
       'ТЕРМИНАЛ АКТИВИРОВАН. ПРИСТУПИТЬ К РУКОВОДСТВУ КАБИНЕТОМ.',
@@ -343,18 +540,20 @@ export default function App() {
     setDecrees(createInitialDecrees());
 
     setCurrentMonth(1);
-    setAttentionPoints(3);
+    setAttentionPoints(MAX_ATTENTION_POINTS);
     setUsedCardIds(new Set());
+    setActiveFlags(new Set());
+    setIncomingCall(null);
+    setCameraFocus('overview');
     setSupportedGkchp(false);
 
     // Initial urgent dispatch
-    const firstCard = getDispatchForMonth(1, new Set());
+    const firstCard = getDispatchForMonth(1, new Set(), new Set(), newRegions, initialEco);
     setUrgentDossier(firstCard);
     setUsedCardIds(new Set([firstCard.id]));
     setUrgentDossierResolved(false);
     setLastChoiceStamp(null);
 
-    setActiveModule('dispatch');
     setMonthlyLog([
       '01.1989 // Сессия Верховного Совета утвердила новый состав ЦК. Терминал АСУ включен.',
     ]);
@@ -367,7 +566,7 @@ export default function App() {
     setBriefingDone(false);
   }, []);
 
-  // Handle return to menu
+  // Return to menu
   const handleReturnToMenu = useCallback(() => {
     terminalAudio.playSwitchClick();
     terminalAudio.updateAdaptiveMusic(false, false);
@@ -384,7 +583,7 @@ export default function App() {
     }
   }, [settings, handleUpdateSettings]);
 
-  // Menu typing simulator with teletypeSpeed support
+  // Menu typing simulator
   const handleMenuSelect = useCallback((cmd: string, targetScreen: ScreenMode) => {
     terminalAudio.playTeletypeClick();
     if (settings.teletypeSpeed === 'instant') {
@@ -418,17 +617,89 @@ export default function App() {
     setScreen('game');
   }, []);
 
-  // Urgent Dispatch resolution (Does NOT cost AP)
+  // Spend Action Point Helper
+  const spendAP = useCallback(
+    (cost: number = 1): boolean => {
+      if (attentionPoints < cost) {
+        setActionNotification({
+          title: 'ДЕФИЦИТ ОЧКОВ ВНИМАНИЯ (ОВ)',
+          text: `Лимит внимания Первого секретаря на текущий месяц исчерпан (${attentionPoints}/${MAX_ATTENTION_POINTS} ОВ). Для восстановления ресурса перейдите к следующему месяцу.`,
+          stamp: 'НЕТ ОВ',
+        });
+        terminalAudio.playTeletypeClick();
+        return false;
+      }
+      setAttentionPoints((prev) => prev - cost);
+      return true;
+    },
+    [attentionPoints]
+  );
+
+  // Urgent Dispatch resolution (left/right costs 1 AP; shelve costs 0 AP with penalties)
   const handleResolveDispatch = useCallback(
-    (choice: 'left' | 'right') => {
+    (choice: 'left' | 'right' | 'shelve') => {
       if (!urgentDossier || urgentDossierResolved) return;
       const c = urgentDossier;
+
+      if (choice === 'shelve') {
+        // Emergency: Shelve with severe penalties (0 AP)
+        setRegions((prev) => {
+          const next = { ...prev };
+          (Object.keys(next) as RegionId[]).forEach((rId) => {
+            next[rId] = { ...next[rId], tension: Math.min(100, next[rId].tension + 8) };
+          });
+          return next;
+        });
+
+        setEconomy((prev) => ({
+          ...prev,
+          moscowPlanFulfilled: Math.max(0, prev.moscowPlanFulfilled - 10),
+          shelfSupplyPercent: Math.max(0, prev.shelfSupplyPercent - 5),
+        }));
+
+        setUrgentDossierResolved(true);
+        setLastChoiceStamp('ОТЛОЖЕНО В ДОЛГИЙ ЯЩИК');
+        terminalAudio.playStampPress();
+
+        setActionNotification({
+          title: 'ДЕПЕША ОТЛОЖЕНА В ДОЛГИЙ ЯЩИК',
+          text: 'Вы отложили решение по острой проблеме без затрат ОВ. Это вызвало раздражение во всех регионах (+8% к напряженности) и срыв союзного плана (-10%).',
+          stamp: 'ПОД СУКНО (0 ОВ)',
+        });
+
+        setMonthlyLog((prev) => [
+          ...prev,
+          `${formatMonthOnly(currentMonth)}: Решение по депеше «${c.senderTitle}» отложено в долгий ящик (0 ОВ). Напряженность +8% во всех регионах, план -10%.`,
+        ]);
+        return;
+      }
+
+      // Left or Right resolution costs 1 AP!
+      if (!spendAP(1)) {
+        setActionNotification({
+          title: 'НЕДОСТАТОЧНО ОЧКОВ ВНИМАНИЯ (ОВ)',
+          text: 'Для утверждения государственной директивы требуется 1 ОВ. Если ОВ исчерпаны, вы можете отложить депешу под сукно [ОТЛОЖИТЬ В ДОЛГИЙ ЯЩИК (0 ОВ)] ценой роста напряженности.',
+          stamp: 'ТРЕБУЕТСЯ 1 ОВ',
+        });
+        return;
+      }
+
       const ch = choice === 'left' ? c.leftChoice : c.rightChoice;
 
       // Track GKCHP alignment
       if (c.id === 'act3_gkchp_day1_morning') {
         if (choice === 'left') setSupportedGkchp(true);
         else setSupportedGkchp(false);
+      }
+
+      // Update activeFlags
+      const flagsToAdd = choice === 'left' ? c.setFlagsOnLeft : c.setFlagsOnRight;
+      if (flagsToAdd && flagsToAdd.length > 0) {
+        setActiveFlags((prev) => {
+          const next = new Set(prev);
+          flagsToAdd.forEach((f) => next.add(f));
+          return next;
+        });
       }
 
       // Apply economy
@@ -486,42 +757,24 @@ export default function App() {
 
       setMonthlyLog((prev) => [
         ...prev,
-        `${formatMonthOnly(currentMonth)}: По депеше «${c.senderTitle}» утверждено: [${ch.label}]. ${ch.effectNote || ''}`,
+        `${formatMonthOnly(currentMonth)}: По депеше «${c.senderTitle}» утверждено: [${ch.label}] (1 ОВ). ${ch.effectNote || ''}`,
       ]);
     },
-    [urgentDossier, urgentDossierResolved, currentMonth]
+    [urgentDossier, urgentDossierResolved, currentMonth, spendAP]
   );
 
-  // Spend Action Point Helper
-  const spendAP = useCallback(
-    (cost: number = 1): boolean => {
-      if (attentionPoints < cost) {
-        setActionNotification({
-          title: 'ДЕФИЦИТ ОЧКОВ ВНИМАНИЯ (ОВ)',
-          text: 'Лимит внимания Первого секретаря на текущий месяц исчерпан (0 ОВ). Для восстановления ресурса перейдите к следующему месяцу.',
-          stamp: 'НЕТ ОВ',
-        });
-        terminalAudio.playTeletypeClick();
-        return false;
-      }
-      setAttentionPoints((prev) => prev - cost);
-      return true;
-    },
-    [attentionPoints]
-  );
-
-  // Repair / Unblock Infrastructure Node (Module 2)
-  const handleRepairNode = useCallback(
+  // Split Repair: 1. Repair damaged node with Rubles (1 AP, -10M ₽)
+  const handleRepairDamagedMoney = useCallback(
     (nodeId: string) => {
       const node = nodes[nodeId];
-      if (!node || node.status === 'operational') return;
+      if (!node || node.status !== 'damaged') return;
 
-      const rubleCost = 8;
+      const rubleCost = 10;
       if (economy.rubleBudgetMillions < rubleCost) {
         setActionNotification({
           title: 'НЕДОСТАТОЧНО СРЕДСТВ',
-          text: `Для ликвидации сбоя на объекте «${node.name}» требуется 8 млн руб. В республиканском бюджете не хватает безналичных средств.`,
-          stamp: 'БЮДЖЕТНЫЙ ТУПИК',
+          text: `Для капремонта объекта «${node.name}» требуется 10 млн руб. В казне недостаточно безналичных средств.`,
+          stamp: 'БЮДЖЕТНЫЙ ДЕФИЦИТ',
         });
         return;
       }
@@ -535,28 +788,231 @@ export default function App() {
 
       setNodes((prev) => ({
         ...prev,
-        [nodeId]: {
-          ...prev[nodeId],
-          status: 'operational',
-        },
+        [nodeId]: { ...prev[nodeId], status: 'operational' },
       }));
 
       terminalAudio.playDirectiveLaunch();
       setActionNotification({
         title: 'ОБЪЕКТ ВОССТАНОВЛЕН',
-        text: `АСУ направила ремонтные бригады и резервные фонды (-8 млн руб, 1 ОВ). Объект «${node.name}» возвращен в штатный режим эксплуатации.`,
-        stamp: 'ВВЕДЕНО В СТРОЙ',
+        text: `Выделены средства из резервного фонда (-10 млн руб, 1 ОВ). Объект «${node.name}» введен в строй.`,
+        stamp: 'РЕМОНТ ЗА РУБЛИ',
       });
 
       setMonthlyLog((prev) => [
         ...prev,
-        `${formatMonthOnly(currentMonth)}: Ликвидирован сбой на объекте «${node.name}» (-8 млн руб, 1 ОВ).`,
+        `${formatMonthOnly(currentMonth)}: Капитальный ремонт «${node.name}» (-10 млн руб, 1 ОВ).`,
       ]);
     },
     [nodes, economy.rubleBudgetMillions, spendAP, currentMonth]
   );
 
-  // Execute Hotline call option (Module 3)
+  // Split Repair: 2. Repair damaged node by drawing from shelves (1 AP, -15% shelves)
+  const handleRepairDamagedShelves = useCallback(
+    (nodeId: string) => {
+      const node = nodes[nodeId];
+      if (!node || node.status !== 'damaged') return;
+
+      if (economy.shelfSupplyPercent < 15) {
+        setActionNotification({
+          title: 'ПОЛКИ ПУСТЫ',
+          text: `Для перераспределения материальных фондов на ремонт «${node.name}» требуется не менее 15% наполненности полок.`,
+          stamp: 'ТОВАРНЫЙ ДЕФИЦИТ',
+        });
+        return;
+      }
+
+      if (!spendAP(1)) return;
+
+      setEconomy((prev) => ({
+        ...prev,
+        shelfSupplyPercent: Math.max(0, prev.shelfSupplyPercent - 15),
+      }));
+
+      setNodes((prev) => ({
+        ...prev,
+        [nodeId]: { ...prev[nodeId], status: 'operational' },
+      }));
+
+      terminalAudio.playDirectiveLaunch();
+      setActionNotification({
+        title: 'МАТЕРИАЛЬНЫЕ ФОНДЫ ПЕРЕНАПРАВЛЕНЫ',
+        text: `Оборудование и стройматериалы изъяты из гражданского оборота (-15% полок, 1 ОВ). Объект «${node.name}» отремонтирован.`,
+        stamp: 'ЗА СЧЕТ ТОВАРОВ',
+      });
+
+      setMonthlyLog((prev) => [
+        ...prev,
+        `${formatMonthOnly(currentMonth)}: Ремонт «${node.name}» за счет товарных фондов (-15% полок, 1 ОВ).`,
+      ]);
+    },
+    [nodes, economy.shelfSupplyPercent, spendAP, currentMonth]
+  );
+
+  // Split Repair: 3. Resolve blocked node via emergency concession (1 AP, -12M ₽, -10% plan)
+  const handleResolveBlockedConcession = useCallback(
+    (nodeId: string) => {
+      const node = nodes[nodeId];
+      if (!node || node.status !== 'blocked') return;
+
+      const rubleCost = 12;
+      if (economy.rubleBudgetMillions < rubleCost) {
+        setActionNotification({
+          title: 'НЕДОСТАТОЧНО СРЕДСТВ',
+          text: `Для удовлетворения требований бастующих на объекте «${node.name}» требуется 12 млн руб.`,
+          stamp: 'ФИНАНСОВЫЙ ТУПИК',
+        });
+        return;
+      }
+
+      if (!spendAP(1)) return;
+
+      setEconomy((prev) => ({
+        ...prev,
+        rubleBudgetMillions: Math.round((prev.rubleBudgetMillions - rubleCost) * 10) / 10,
+        moscowPlanFulfilled: Math.max(0, prev.moscowPlanFulfilled - 10),
+      }));
+
+      setNodes((prev) => ({
+        ...prev,
+        [nodeId]: { ...prev[nodeId], status: 'operational' },
+      }));
+
+      terminalAudio.playDirectiveLaunch();
+      setActionNotification({
+        title: 'УСТУПКА БАСТУЮЩИМ',
+        text: `Требования забастовщиков частично удовлетворены (-12 млн руб, -10% плана, 1 ОВ). Блокада с объекта «${node.name}» снята.`,
+        stamp: 'КОМПРОМИСС',
+      });
+
+      setMonthlyLog((prev) => [
+        ...prev,
+        `${formatMonthOnly(currentMonth)}: Разблокирован узел «${node.name}» через уступку бастующим (-12 млн руб, -10% плана, 1 ОВ).`,
+      ]);
+    },
+    [nodes, economy.rubleBudgetMillions, spendAP, currentMonth]
+  );
+
+  // Split Repair: 4. Storm insurgent-held node with special forces (1 AP, +15% tension, +10 autocracy)
+  const handleStormInsurgents = useCallback(
+    (nodeId: string) => {
+      const node = nodes[nodeId];
+      if (!node || node.status !== 'insurgent_held') return;
+
+      if (!spendAP(1)) return;
+
+      const sectorToRegion: Record<SectorId, RegionId> = {
+        capital: 'capital',
+        mines: 'miners',
+        agrarian: 'agrarian',
+        autonomy: 'autonomy',
+      };
+      const regionId = sectorToRegion[node.sectorId];
+
+      setNodes((prev) => ({
+        ...prev,
+        [nodeId]: { ...prev[nodeId], status: 'operational' },
+      }));
+
+      setRegions((prev) => {
+        const cur = prev[regionId];
+        if (!cur) return prev;
+        return { ...prev, [regionId]: { ...cur, tension: Math.min(100, cur.tension + 15) } };
+      });
+
+      setProfile((prev) => ({
+        ...prev,
+        autocracy: Math.min(100, prev.autocracy + 10),
+      }));
+
+      terminalAudio.playEmergencyAlarm();
+      setActionNotification({
+        title: 'СИЛОВОЙ ШТУРМ ЗАВЕРШЕН',
+        text: `Спецназ КГБ и внутренние войска выбили незаконные формирования с объекта «${node.name}» (1 ОВ). Напряженность в регионе подскочила (+15%), Автократия +10.`,
+        stamp: 'ШТУРМ СПЕЦНАЗА',
+      });
+
+      setMonthlyLog((prev) => [
+        ...prev,
+        `${formatMonthOnly(currentMonth)}: Силовой штурм объекта «${node.name}» (1 ОВ, напряженность +15%, автократия +10).`,
+      ]);
+    },
+    [nodes, spendAP, currentMonth]
+  );
+
+  // Regional Curfew: 1 AP, curfewTurns = 3, -25% tension, unblocks nodes, -6M ₽, -12% plan, +12 autocracy
+  const handleDeclareCurfew = useCallback(
+    (regionId: RegionId) => {
+      const reg = regions[regionId];
+      if (!reg) return;
+
+      if (economy.rubleBudgetMillions < 6) {
+        setActionNotification({
+          title: 'НЕДОСТАТОЧНО СРЕДСТВ',
+          text: 'Для ввода комендантского часа, переброски мотострелковых частей и развертывания блокпостов требуется не менее 6 млн руб.',
+          stamp: 'ОТКАЗ КОМЕНДАТУРЫ',
+        });
+        return;
+      }
+
+      if (!spendAP(1)) return;
+
+      setEconomy((prev) => ({
+        ...prev,
+        rubleBudgetMillions: Math.round((prev.rubleBudgetMillions - 6) * 10) / 10,
+        moscowPlanFulfilled: Math.max(0, prev.moscowPlanFulfilled - 12),
+      }));
+
+      setRegions((prev) => {
+        const cur = prev[regionId];
+        return {
+          ...prev,
+          [regionId]: {
+            ...cur,
+            curfewTurns: 3,
+            tension: Math.max(0, cur.tension - 25),
+          },
+        };
+      });
+
+      const regionToSector: Record<RegionId, SectorId> = {
+        capital: 'capital',
+        miners: 'mines',
+        agrarian: 'agrarian',
+        autonomy: 'autonomy',
+      };
+      const targetSector = regionToSector[regionId];
+
+      setNodes((prev) => {
+        const next = { ...prev };
+        Object.keys(next).forEach((id) => {
+          if (next[id].sectorId === targetSector && next[id].status === 'blocked') {
+            next[id] = { ...next[id], status: 'operational' };
+          }
+        });
+        return next;
+      });
+
+      setProfile((prev) => ({
+        ...prev,
+        autocracy: Math.min(100, prev.autocracy + 12),
+      }));
+
+      terminalAudio.playEmergencyAlarm();
+      setActionNotification({
+        title: 'ВВЕДЕН КОМЕНДАНТСКИЙ ЧАС',
+        text: `В регионе «${reg.name}» объявлено чрезвычайное положение на 3 месяца (1 ОВ, -6 млн руб). Напряженность сбита на 25%, забастовочные пикеты разогнаны, союзный план упал на 12%.`,
+        stamp: 'ОСОБЫЙ РЕЖИМ',
+      });
+
+      setMonthlyLog((prev) => [
+        ...prev,
+        `${formatMonthOnly(currentMonth)}: Введен комендантский час в регионе «${reg.name}» (1 ОВ, -25% напряжение, -6М ₽, -12% план, +12 автократия).`,
+      ]);
+    },
+    [regions, economy.rubleBudgetMillions, spendAP, currentMonth]
+  );
+
+  // Execute Hotline call option (costs 1 AP)
   const handleExecuteCallOption = useCallback(
     (actorId: string, optionId: string) => {
       const actor = actors[actorId];
@@ -569,7 +1025,7 @@ export default function App() {
         if (!hasKompromat) {
           setActionNotification({
             title: 'НЕТ ОПЕРАТИВНОГО КОМПРОМАТА',
-            text: `Шантаж невозможен: 7-е управление КГБ еще не предоставило доказательств по фигуранту ${actor.name}. Сначала санкционируйте прослушку в Модуле 4.`,
+            text: `Шантаж невозможен: 7-е управление КГБ еще не предоставило доказательств по фигуранту ${actor.name}. Сначала санкционируйте прослушку в сейфе КГБ.`,
             stamp: 'ОТКАЗ КГБ',
           });
           return;
@@ -596,14 +1052,12 @@ export default function App() {
 
       if (!spendAP(1)) return;
 
-      // Apply resource costs
       setEconomy((prev) => ({
         ...prev,
         rubleBudgetMillions: opt.rubleCost ? Math.round((prev.rubleBudgetMillions - opt.rubleCost) * 10) / 10 : prev.rubleBudgetMillions,
         hardCurrencyReserve: opt.currencyCost ? Math.max(0, prev.hardCurrencyReserve - opt.currencyCost) : prev.hardCurrencyReserve,
       }));
 
-      // Apply actor loyalty & influence shifts
       setActors((prev) => {
         const a = prev[actorId];
         const newLoyalty = Math.max(0, Math.min(100, a.loyalty + (opt.loyaltyDelta || 0)));
@@ -623,7 +1077,6 @@ export default function App() {
         };
       });
 
-      // Special action chain effects
       if (opt.id === 'koval_subsidies' || opt.id === 'koval_blackmail') {
         setNodes((prev) => ({
           ...prev,
@@ -646,7 +1099,93 @@ export default function App() {
     [actors, economy.rubleBudgetMillions, economy.hardCurrencyReserve, spendAP, currentMonth]
   );
 
-  // Authorize KGB Wiretap (Module 4)
+  // Incoming Call Answer (0 AP)
+  const handleAnswerIncomingCall = useCallback(
+    (optionId: string) => {
+      if (!incomingCall) return;
+      const opt = incomingCall.options.find((o) => o.id === optionId);
+      if (!opt) return;
+
+      if (opt.rubleCost && economy.rubleBudgetMillions < opt.rubleCost) {
+        setActionNotification({
+          title: 'НЕДОСТАТОЧНО СРЕДСТВ',
+          text: `Для согласия требуется ${opt.rubleCost} млн руб. В казне нет средств.`,
+          stamp: 'ФИНАНСОВЫЙ ТУПИК',
+        });
+        return;
+      }
+
+      if (opt.currencyCost && economy.hardCurrencyReserve < opt.currencyCost) {
+        setActionNotification({
+          title: 'НЕДОСТАТОЧНО ВАЛЮТЫ',
+          text: `Для выполнения условий требуется $${opt.currencyCost} млн валюты.`,
+          stamp: 'ВАЛЮТНЫЙ ДЕФИЦИТ',
+        });
+        return;
+      }
+
+      setEconomy((prev) => ({
+        ...prev,
+        rubleBudgetMillions: opt.rubleCost ? Math.round((prev.rubleBudgetMillions - opt.rubleCost) * 10) / 10 : prev.rubleBudgetMillions,
+        hardCurrencyReserve: opt.currencyCost ? Math.max(0, prev.hardCurrencyReserve - opt.currencyCost) : prev.hardCurrencyReserve,
+        moscowPlanFulfilled: opt.planDelta ? Math.max(0, Math.min(100, prev.moscowPlanFulfilled + opt.planDelta)) : prev.moscowPlanFulfilled,
+        shelfSupplyPercent: opt.shelfDelta ? Math.max(0, Math.min(100, prev.shelfSupplyPercent + opt.shelfDelta)) : prev.shelfSupplyPercent,
+      }));
+
+      if (opt.loyaltyDelta && incomingCall.actorId && actors[incomingCall.actorId]) {
+        setActors((prev) => {
+          const a = prev[incomingCall.actorId];
+          return {
+            ...prev,
+            [incomingCall.actorId]: {
+              ...a,
+              loyalty: Math.max(0, Math.min(100, a.loyalty + opt.loyaltyDelta!)),
+              plotProgress: opt.loyaltyDelta! > 0 ? Math.max(0, a.plotProgress - 1) : a.plotProgress,
+            },
+          };
+        });
+      }
+
+      if (opt.tensionDelta) {
+        setRegions((prev) => {
+          const next = { ...prev };
+          (Object.keys(next) as RegionId[]).forEach((rId) => {
+            next[rId] = { ...next[rId], tension: Math.max(0, Math.min(100, next[rId].tension + opt.tensionDelta!)) };
+          });
+          return next;
+        });
+      }
+
+      if (opt.unblockNodeId) {
+        setNodes((prev) => {
+          if (prev[opt.unblockNodeId!]) {
+            return {
+              ...prev,
+              [opt.unblockNodeId!]: { ...prev[opt.unblockNodeId!], status: 'operational' },
+            };
+          }
+          return prev;
+        });
+      }
+
+      terminalAudio.playHotlineTone();
+      setActionNotification({
+        title: `ВЧ-СВЯЗЬ: ${incomingCall.actorName.toUpperCase()}`,
+        text: `Разговор завершен: [${opt.label}]. ${opt.effectNote}`,
+        stamp: 'ВЧ-РАЗГОВОР',
+      });
+
+      setMonthlyLog((prev) => [
+        ...prev,
+        `${formatMonthOnly(currentMonth)}: Входящий звонок от ${incomingCall.actorName}: «${opt.label}» (0 ОВ).`,
+      ]);
+
+      setIncomingCall(null);
+    },
+    [incomingCall, economy, actors, currentMonth]
+  );
+
+  // Authorize KGB Wiretap (1 AP)
   const handleAuthorizeWiretap = useCallback(
     (actorId: string) => {
       const actor = actors[actorId];
@@ -678,7 +1217,51 @@ export default function App() {
     [actors, spendAP, currentMonth]
   );
 
-  // Toggle State Decree (Module 5)
+  // Freeze Actor Assets in KGB safe (0 AP, resets plot, +12M ₽, +$5M)
+  const handleFreezeActorAssets = useCallback(
+    (actorId: string, kompromatId: string) => {
+      const actor = actors[actorId];
+      if (!actor) return;
+      const item = actor.unlockedKompromat.find((k) => k.id === kompromatId && !k.used);
+      if (!item) return;
+
+      setActors((prev) => {
+        const a = prev[actorId];
+        return {
+          ...prev,
+          [actorId]: {
+            ...a,
+            plotProgress: 0,
+            loyalty: Math.max(0, a.loyalty - 15),
+            unlockedKompromat: a.unlockedKompromat.map((k) =>
+              k.id === kompromatId ? { ...k, used: true } : k
+            ),
+          },
+        };
+      });
+
+      setEconomy((prev) => ({
+        ...prev,
+        rubleBudgetMillions: Math.round((prev.rubleBudgetMillions + 12) * 10) / 10,
+        hardCurrencyReserve: prev.hardCurrencyReserve + 5,
+      }));
+
+      terminalAudio.playStampPress();
+      setActionNotification({
+        title: 'АРЕСТ АКТИВОВ И СЧЕТОВ',
+        text: `На основании материалов 7-го управления КГБ заморожены теневые счета фигуранта ${actor.name} (0 ОВ). Изъято +12 млн руб. и $5 млн валюты. Заговор нейтрализован (прогресс сброшен на 0). Лояльность фигуранта снизилась на 15.`,
+        stamp: 'КОНФИСКАЦИЯ КГБ',
+      });
+
+      setMonthlyLog((prev) => [
+        ...prev,
+        `${formatMonthOnly(currentMonth)}: Арест счетов фигуранта ${actor.name} по материалам КГБ (+12 млн руб, +$5 млн валюты, сброс заговора).`,
+      ]);
+    },
+    [actors, currentMonth]
+  );
+
+  // Toggle State Decree (1 AP)
   const handleToggleDecree = useCallback(
     (decreeId: string) => {
       const decree = decrees.find((d) => d.id === decreeId);
@@ -713,10 +1296,10 @@ export default function App() {
     if (!urgentDossierResolved) {
       setActionNotification({
         title: 'ТРЕБУЕТСЯ ПОДПИСЬ ПЕРВОГО СЕКРЕТАРЯ',
-        text: 'Вы не можете закрыть месяц, не приняв решение по обязательной Депеше Месяца! Перейдите в Модуль 1 и поставьте резолюцию.',
-        stamp: 'ДЕПЕША НЕ ПОДПИСАНА',
+        text: 'Вы не можете закрыть месяц, не приняв решение по обязательной Депеше Месяца! Откройте «Особую папку ЦК» на столе (клик по папке в центре стола).',
+        stamp: 'ПАПКА НЕ ПОДПИСАНА',
       });
-      setActiveModule('dispatch');
+      setCameraFocus('dispatch');
       terminalAudio.playTeletypeClick();
       return;
     }
@@ -735,7 +1318,76 @@ export default function App() {
     };
     const notes: string[] = [];
 
-    // 1. Infrastructure chain reactions
+    // 1. Process ignored incoming call if any
+    if (incomingCall) {
+      if (incomingCall.actorId === 'gosplan') {
+        ecoDelta.moscowPlanFulfilled = (ecoDelta.moscowPlanFulfilled || 0) - 15;
+        notes.push('ВЧ-ВЕРТУШКА: Звонок из Госплана остался без ответа! Москва сочла это саботажем (-15% союзного плана).');
+      } else if (actors[incomingCall.actorId]) {
+        const caller = actors[incomingCall.actorId];
+        notes.push(`ВЧ-ВЕРТУШКА: Абонент ${caller.name} не дождался ответа на срочный звонок! Лояльность упала на 20.`);
+        setActors((prev) => {
+          const cur = prev[incomingCall.actorId];
+          if (!cur) return prev;
+          return {
+            ...prev,
+            [incomingCall.actorId]: {
+              ...cur,
+              loyalty: Math.max(0, cur.loyalty - 20),
+              plotProgress: Math.min(3, cur.plotProgress + 1),
+            },
+          };
+        });
+      }
+      setIncomingCall(null);
+    }
+
+    // 2. Base state upkeep & tension penalties
+    const curAvgTension = (regions.capital.tension + regions.miners.tension + regions.agrarian.tension + regions.autonomy.tension) / 4;
+    ecoDelta.rubleBudgetMillions = (ecoDelta.rubleBudgetMillions || 0) - 14;
+    notes.push('ГОСРАСХОДЫ: Базовое содержание партаппарата, милиции и бюджетников: -14М ₽.');
+
+    if (curAvgTension > 50) {
+      ecoDelta.rubleBudgetMillions = (ecoDelta.rubleBudgetMillions || 0) - 4;
+      notes.push('БЕСПОРЯДКИ: Высокая напряженность в республике (>50%): экстренные расходы на правопорядок -4М ₽.');
+    }
+
+    // 2b. Node operational production vs breakdown losses
+    const opNodesCount = Object.values(nodes).filter((n) => n.status === 'operational').length;
+    const nonOpNodesCount = 8 - opNodesCount;
+    const insurgentNodesCount = Object.values(nodes).filter((n) => n.status === 'insurgent_held').length;
+
+    const ecoEfficiency = Math.max(0.2, (economy.shelfSupplyPercent + economy.moscowPlanFulfilled) / 160);
+    const opNodeIncome = Math.round(opNodesCount * 2.0 * ecoEfficiency * 10) / 10;
+    ecoDelta.rubleBudgetMillions = (ecoDelta.rubleBudgetMillions || 0) + opNodeIncome;
+    notes.push(`АСУ-ДОХОД: Действующие узлы (${opNodesCount}/8, эфф. ${Math.round(ecoEfficiency * 100)}%) принесли +${opNodeIncome}М ₽ в бюджет.`);
+
+    if (nonOpNodesCount > 0) {
+      const nonOpLoss = Math.round(nonOpNodesCount * 4.5 * 10) / 10;
+      ecoDelta.rubleBudgetMillions = (ecoDelta.rubleBudgetMillions || 0) - nonOpLoss;
+      notes.push(`ДОТАЦИИ И УБЫТКИ: Недействующие узлы (${nonOpNodesCount}/8) потребовали субсидий -${nonOpLoss}М ₽.`);
+    }
+
+    if (insurgentNodesCount > 0) {
+      const insurgentLoss = insurgentNodesCount * 3;
+      const insurgentPlanLoss = insurgentNodesCount * 5;
+      ecoDelta.rubleBudgetMillions = (ecoDelta.rubleBudgetMillions || 0) - insurgentLoss;
+      ecoDelta.moscowPlanFulfilled = (ecoDelta.moscowPlanFulfilled || 0) - insurgentPlanLoss;
+      notes.push(`МЯТЕЖ: Незаконные формирования удерживают объекты (${insurgentNodesCount}), диверсии -${insurgentLoss}М ₽, срыв плана -${insurgentPlanLoss}%.`);
+    }
+
+    // 3. Base Perestroika entropy
+    const shelfEntropy = economy.shelfSupplyPercent < 40 ? 7 : 4;
+    ecoDelta.shelfSupplyPercent = (ecoDelta.shelfSupplyPercent || 0) - shelfEntropy;
+    notes.push(`ДЕФИЦИТ: Товарная энтропия снизила запасы полок на -${shelfEntropy}%.`);
+
+    const tensionGrowth = economy.shelfSupplyPercent < 40 ? 7 : 3;
+    tensionDelta.capital += tensionGrowth;
+    tensionDelta.miners += tensionGrowth;
+    tensionDelta.agrarian += tensionGrowth;
+    tensionDelta.autonomy += tensionGrowth;
+
+    // 4. Infrastructure chain reactions
     const updatedNodes = { ...nodes };
 
     if (updatedNodes.mines_sorting_station?.status !== 'operational') {
@@ -767,7 +1419,7 @@ export default function App() {
       notes.push('Гарнизонный арсенал удерживается незаконными формированиями: угроза вооруженного мятежа!');
     }
 
-    // 2. Active decrees monthly impact
+    // 5. Active decrees monthly impact
     decrees.filter((d) => d.active).forEach((d) => {
       if (d.monthlyImpact.rubleBudgetMillions) ecoDelta.rubleBudgetMillions = (ecoDelta.rubleBudgetMillions || 0) + d.monthlyImpact.rubleBudgetMillions;
       if (d.monthlyImpact.shelfSupplyPercent) ecoDelta.shelfSupplyPercent = (ecoDelta.shelfSupplyPercent || 0) + d.monthlyImpact.shelfSupplyPercent;
@@ -782,82 +1434,141 @@ export default function App() {
       notes.push(`Указ ${d.title}: плановое исполнение.`);
     });
 
-    // 3. Historical incidents at key months
+    // 6. Dynamic Breakdowns based on tension & budget
+    (Object.keys(regions) as RegionId[]).forEach((rId) => {
+      const reg = regions[rId];
+      if (reg.tension >= 85) {
+        const sectorMap: Record<RegionId, SectorId> = { capital: 'capital', miners: 'mines', agrarian: 'agrarian', autonomy: 'autonomy' };
+        const sec = sectorMap[rId];
+        const sectorNode = Object.values(updatedNodes).find((n) => n.sectorId === sec && n.status !== 'insurgent_held');
+        if (sectorNode) {
+          updatedNodes[sectorNode.id] = { ...sectorNode, status: 'insurgent_held' };
+          notes.push(`БУНТ В РЕГИОНЕ: Напряженность достигла 85%! Объект «${sectorNode.name}» захвачен мятежниками!`);
+        }
+      } else if (reg.tension >= 65 && Math.random() < 0.5) {
+        const sectorMap: Record<RegionId, SectorId> = { capital: 'capital', miners: 'mines', agrarian: 'agrarian', autonomy: 'autonomy' };
+        const sec = sectorMap[rId];
+        const sectorNode = Object.values(updatedNodes).find((n) => n.sectorId === sec && n.status === 'operational');
+        if (sectorNode) {
+          updatedNodes[sectorNode.id] = { ...sectorNode, status: 'blocked' };
+          notes.push(`ВОЛНЕНИЯ: Объект «${sectorNode.name}» блокирован забастовщиками/протестующими!`);
+        }
+      }
+    });
+
+    if (economy.rubleBudgetMillions <= 5) {
+      const randomOpNode = Object.values(updatedNodes).find((n) => n.status === 'operational');
+      if (randomOpNode) {
+        updatedNodes[randomOpNode.id] = { ...randomOpNode, status: 'damaged' };
+        notes.push(`ИЗНОС ОСНОВНЫХ ФОНДОВ: Из-за безденежья объект «${randomOpNode.name}» вышел из строя.`);
+      }
+    }
+
+    // 7. Key historical incidents
     if (currentMonth === 6) {
-      if (updatedNodes.mines_sorting_station.status === 'operational') {
+      if (updatedNodes.mines_sorting_station?.status === 'operational') {
         updatedNodes.mines_sorting_station = { ...updatedNodes.mines_sorting_station, status: 'blocked' };
-        notes.push('СТИХИЙНАЯ СТАЧКА: горняки перекрыли подъездные пути станции "Угольная"!');
+        notes.push('ИСТОРИЧЕСКИЙ КРИЗИС (Июль 1989): Всесоюзная шахтерская стачка парализовала станцию "Угольная"!');
       }
     } else if (currentMonth === 12) {
-      if (updatedNodes.autonomy_customs_terminal.status === 'operational') {
+      if (updatedNodes.autonomy_customs_terminal?.status === 'operational') {
         updatedNodes.autonomy_customs_terminal = { ...updatedNodes.autonomy_customs_terminal, status: 'blocked' };
-        notes.push('БЕСПОРЯДКИ НА ПЕРИФЕРИИ: таможенный терминал заблокирован радикалами.');
+        notes.push('ИСТОРИЧЕСКИЙ КРИЗИС: Таможенный терминал автономии заблокирован!');
       }
     } else if (currentMonth === 19) {
-      if (updatedNodes.capital_distrib_base.status === 'operational') {
+      if (updatedNodes.capital_distrib_base?.status === 'operational') {
         updatedNodes.capital_distrib_base = { ...updatedNodes.capital_distrib_base, status: 'damaged' };
-        notes.push('ДЕФИЦИТНЫЙ БУНТ: склады ГлавТорга осаждены тысячами покупателей.');
+        notes.push('ИСТОРИЧЕСКИЙ КРИЗИС: Товарный голод вызвал погром распределительной базы ГлавТорга!');
       }
     }
 
     setNodes(updatedNodes);
 
-    // 4. Progress KGB surveillance
-    setActors((prev) => {
-      const updated = { ...prev };
-      Object.keys(updated).forEach((id) => {
-        const a = updated[id];
-        if (a.surveillance === 'wiretap') {
-          updated[id] = {
-            ...a,
-            surveillance: 'infiltrated',
-            unlockedKompromat: a.unlockedKompromat.map((k) => ({ ...k })),
-          };
-          notes.push(`7-е управление КГБ завершило разработку по фигуранту ${a.name}: получены улики!`);
-        }
-      });
-      return updated;
-    });
+    // 8. Progress KGB surveillance & Actor Plots
+    const updatedActors = { ...actors };
+    Object.keys(updatedActors).forEach((id) => {
+      const a = { ...updatedActors[id] };
 
-    // 5. Calculate new economy & tensions
+      if (a.surveillance === 'wiretap') {
+        a.surveillance = 'infiltrated';
+        notes.push(`КГБ: 7-е управление завершило прослушку фигуранта ${a.name}: компромат в сейфе!`);
+      }
+
+      if (a.loyalty < 55) {
+        a.plotProgress = Math.min(3, a.plotProgress + 1);
+      }
+
+      if (a.plotProgress >= 3) {
+        a.plotProgress = 0;
+        if (a.id === 'koval') {
+          if (updatedNodes.mines_sorting_station) {
+            updatedNodes.mines_sorting_station = { ...updatedNodes.mines_sorting_station, status: 'blocked' };
+          }
+          tensionDelta.miners += 20;
+          notes.push('ЗАБАСТОВОЧНЫЙ УДАР: Степан Коваль остановил погрузку угля! Напряженность шахтеров +20%.');
+        } else if (a.id === 'pozharsky') {
+          tensionDelta.capital += 25;
+          notes.push('МАССОВЫЙ МИТИНГ: Олег Пожарский вывел толпу на площадь Дома Советов! Столица парализована (+25% tension).');
+        } else if (a.id === 'platonov') {
+          ecoDelta.rubleBudgetMillions = (ecoDelta.rubleBudgetMillions || 0) - 15;
+          ecoDelta.hardCurrencyReserve = (ecoDelta.hardCurrencyReserve || 0) - 5;
+          notes.push('ТЕНЕВОЙ САБОТАЖ: Аркадий Платонов увел средства в теневые кооперативы (-15М ₽, -$5М).');
+        } else if (a.id === 'gromov') {
+          ecoDelta.moscowPlanFulfilled = (ecoDelta.moscowPlanFulfilled || 0) - 15;
+          notes.push('ОПЕРАЦИЯ "КРОТ": Виктор Громов направил закрытое донесение в КГБ СССР (-15% доверия Москвы).');
+        } else if (a.id === 'voronov') {
+          if (updatedNodes.autonomy_garrison_arsenal) {
+            updatedNodes.autonomy_garrison_arsenal = { ...updatedNodes.autonomy_garrison_arsenal, status: 'insurgent_held' };
+          }
+          tensionDelta.autonomy += 25;
+          notes.push('МЯТЕЖ ГАРНИЗОНА: Сепаратисты при попустительстве комендатуры захватили арсенал автономии!');
+        }
+      }
+
+      updatedActors[id] = a;
+    });
+    setActors(updatedActors);
+
+    // 9. Calculate new economy & tensions
     const newEconomy: RepublicEconomy = {
       rubleBudgetMillions: Math.round((economy.rubleBudgetMillions + (ecoDelta.rubleBudgetMillions || 0)) * 10) / 10,
       shelfSupplyPercent: Math.max(0, Math.min(100, economy.shelfSupplyPercent + (ecoDelta.shelfSupplyPercent || 0))),
       moscowPlanFulfilled: Math.max(0, Math.min(100, economy.moscowPlanFulfilled + (ecoDelta.moscowPlanFulfilled || 0))),
       hardCurrencyReserve: Math.max(0, Math.min(100, economy.hardCurrencyReserve + (ecoDelta.hardCurrencyReserve || 0))),
     };
-
     setEconomy(newEconomy);
 
-    setRegions((prev) => {
-      const next: Record<RegionId, RegionState> = { ...prev };
-      (Object.keys(next) as RegionId[]).forEach((rId) => {
-        const cur = next[rId];
-        const shift = tensionDelta[rId] || 0;
-        let newTension = cur.tension + shift;
-        if (cur.curfewTurns > 0) {
-          newTension = cur.tension;
-          next[rId] = { ...cur, curfewTurns: cur.curfewTurns - 1, tension: Math.max(0, Math.min(100, newTension)) };
-        } else {
-          next[rId] = { ...cur, tension: Math.max(0, Math.min(100, newTension)) };
-        }
-      });
-      return next;
+    const nextRegions: Record<RegionId, RegionState> = { ...regions };
+    (Object.keys(nextRegions) as RegionId[]).forEach((rId) => {
+      const cur = nextRegions[rId];
+      const shift = tensionDelta[rId] || 0;
+      if (cur.curfewTurns > 0) {
+        nextRegions[rId] = { ...cur, curfewTurns: cur.curfewTurns - 1 };
+      } else {
+        nextRegions[rId] = { ...cur, tension: Math.max(0, Math.min(100, cur.tension + shift)) };
+      }
     });
+    setRegions(nextRegions);
 
     // Synchronize stats
     const avgTension =
-      (regions.capital.tension + regions.miners.tension + regions.agrarian.tension + regions.autonomy.tension) / 4;
+      (nextRegions.capital.tension + nextRegions.miners.tension + nextRegions.agrarian.tension + nextRegions.autonomy.tension) / 4;
+
+    const controlledActorsCount = Object.values(updatedActors).filter(
+      (a) => a.surveillance === 'infiltrated' || a.loyalty >= 70
+    ).length;
+    const curfewCount = Object.values(nextRegions).filter((r) => r.curfewTurns > 0).length;
+    const dynamicKgb = Math.max(0, Math.min(100, 40 + controlledActorsCount * 10 + curfewCount * 8));
 
     const newStats: Stats = {
       moscow: Math.round(Math.max(0, Math.min(100, newEconomy.moscowPlanFulfilled * 0.7 + (100 - avgTension) * 0.3))),
       people: Math.round(Math.max(0, Math.min(100, newEconomy.shelfSupplyPercent * 0.6 + (100 - avgTension) * 0.4))),
-      kgb: stats.kgb,
+      kgb: dynamicKgb,
       economy: Math.round(Math.max(0, Math.min(100, 30 + newEconomy.rubleBudgetMillions * 0.35 + newEconomy.shelfSupplyPercent * 0.35))),
     };
     setStats(newStats);
 
-    // 6. Check ending condition
+    // 10. Check ending conditions
     const ending = determineStrategyEnding(newEconomy, newStats, profile, currentMonth, supportedGkchp);
     if (ending) {
       if (!unlockedEndings.includes(ending.id)) {
@@ -878,7 +1589,7 @@ export default function App() {
       return;
     }
 
-    // 7. Advance Month
+    // 11. Advance Month
     const nextM = currentMonth + 1;
     if (nextM > 36) {
       const finalEnding =
@@ -899,13 +1610,18 @@ export default function App() {
     }
 
     setCurrentMonth(nextM);
-    setAttentionPoints(3);
+    setAttentionPoints(MAX_ATTENTION_POINTS);
+    setCameraFocus('overview');
 
-    const nextCard = getDispatchForMonth(nextM, usedCardIds);
+    const nextCard = getDispatchForMonth(nextM, usedCardIds, activeFlags, nextRegions, newEconomy);
     setUrgentDossier(nextCard);
     setUsedCardIds((prev) => new Set([...prev, nextCard.id]));
     setUrgentDossierResolved(false);
     setLastChoiceStamp(null);
+
+    // Generate incoming call for next month
+    const newCall = generateIncomingCall(nextM, updatedNodes, updatedActors, newEconomy);
+    setIncomingCall(newCall);
 
     setLastMonthSummary({
       prevMonth: currentMonth,
@@ -917,40 +1633,34 @@ export default function App() {
     terminalAudio.playPaperSlide();
   }, [
     urgentDossierResolved,
+    incomingCall,
+    actors,
     nodes,
-    decrees,
-    currentMonth,
     economy,
+    decrees,
     regions,
     stats.kgb,
     profile,
     supportedGkchp,
     unlockedEndings,
+    currentMonth,
     usedCardIds,
+    activeFlags,
   ]);
 
   const currentTassNews = useMemo(() => getTassHeadlineForMonth(currentMonth), [currentMonth]);
-
-  const brokenNodesCount = useMemo(() => {
-    return Object.values(nodes).filter((n) => n.status !== 'operational').length;
-  }, [nodes]);
-
-  const activeDecreesCount = useMemo(() => {
-    return decrees.filter((d) => d.active).length;
-  }, [decrees]);
-
   const isMuted = terminalAudio.getMuted();
 
   return (
     <div
       style={phosphorThemeVars as React.CSSProperties}
-      className={`w-screen h-[100dvh] max-h-[100dvh] overflow-hidden bg-[#0a0603] crt-term-text flex items-center justify-center p-0 md:p-2 select-none ${
+      className={`w-screen h-[100dvh] max-h-[100dvh] overflow-hidden bg-[var(--term-bg)] crt-term-text flex items-center justify-center p-0 md:p-2 select-none ${
         settings.screenCurvature ? 'crt-curve-frame' : ''
       }`}
     >
       {/* Outer Retro CRT Monitor Bezel */}
       <div
-        className={`relative w-full h-full max-w-5xl crt-screen-bezel flex flex-col overflow-hidden border border-[#3d2607] md:rounded-lg shadow-[0_0_40px_rgba(0,0,0,0.95)] ${
+        className={`relative w-full h-full max-w-5xl crt-screen-bezel flex flex-col overflow-hidden border border-[var(--term-border-dark)] md:rounded-lg shadow-[0_0_40px_rgba(0,0,0,0.95)] ${
           isEmergency && settings.voltageGlitches ? 'animate-voltage-glitch' : ''
         }`}
       >
@@ -958,29 +1668,29 @@ export default function App() {
         {/* TOP INFOBAR / HEADER                                      */}
         {/* ========================================================= */}
         {screen === 'game' ? (
-          <header className="shrink-0 border-b border-[#3d2607] bg-[#100a04] px-2 py-1 md:py-1.5 flex flex-wrap items-center justify-between text-xs font-mono z-20">
+          <header className="shrink-0 border-b border-[var(--term-border-dark)] bg-[var(--term-panel)] px-2 py-1 md:py-1.5 flex flex-wrap items-center justify-between text-xs font-mono z-20">
             {/* Left: Date & Turn */}
             <div className="flex items-center space-x-2">
               <span className="font-extrabold crt-term-text text-xs md:text-sm tracking-wide">
                 {formatMonthYear(currentMonth)}
               </span>
-              <div className="px-2 py-0.5 border border-[#ffb000] bg-[#ffb000]/10 text-[10px] md:text-xs font-black">
-                ОВ: {attentionPoints}/3
-                <span className="ml-1 tracking-widest text-[#ffb000]">
-                  {[0, 1, 2].map((i) => (i < attentionPoints ? '■' : '□')).join(' ')}
+              <div className="px-2 py-0.5 border border-[var(--term-border)] bg-[var(--term-main)]/10 text-xs font-black">
+                ОВ: {attentionPoints}/{MAX_ATTENTION_POINTS}
+                <span className="ml-1 tracking-widest text-[var(--term-main)]">
+                  {Array.from({ length: MAX_ATTENTION_POINTS }).map((_, i) => (i < attentionPoints ? '■' : '□')).join(' ')}
                 </span>
               </div>
             </div>
 
             {/* Center: Economic Vital Indicators */}
-            <div className="flex items-center space-x-3 text-[10px] md:text-xs">
+            <div className="flex items-center space-x-3 text-xs font-semibold">
               <div
                 className={`flex items-center space-x-1 ${
-                  economy.rubleBudgetMillions < 0 ? 'text-[#ff2a00] font-bold' : 'text-[#ffb000]'
+                  economy.rubleBudgetMillions < 0 ? 'text-[#ff2a00] font-bold' : 'text-[var(--term-main)]'
                 }`}
                 title="Безналичный баланс республиканской казны"
               >
-                <span className="text-[#8c5b0f]">КАЗНА:</span>
+                <span className="text-[var(--term-dim)] font-semibold">КАЗНА:</span>
                 <span className="font-bold">{economy.rubleBudgetMillions}М ₽</span>
               </div>
 
@@ -994,7 +1704,7 @@ export default function App() {
                 }`}
                 title="Наполненность полок магазинов (Дефицит)"
               >
-                <span className="text-[#8c5b0f]">ПОЛКИ:</span>
+                <span className="text-[var(--term-dim)] font-semibold">ПОЛКИ:</span>
                 <span className="font-bold">{economy.shelfSupplyPercent}%</span>
               </div>
 
@@ -1008,21 +1718,21 @@ export default function App() {
                 }`}
                 title="Выполнение союзного плана поставок (Госплан)"
               >
-                <span className="text-[#8c5b0f]">ПЛАН:</span>
+                <span className="text-[var(--term-dim)] font-semibold">ПЛАН:</span>
                 <span className="font-bold">{economy.moscowPlanFulfilled}%</span>
               </div>
 
               <div className="flex items-center space-x-1 text-[#33ccff]" title="Валютный резерв республики">
-                <span className="text-[#8c5b0f]">ВАЛЮТА:</span>
+                <span className="text-[var(--term-dim)] font-semibold">ВАЛЮТА:</span>
                 <span className="font-bold">${economy.hardCurrencyReserve}М</span>
               </div>
             </div>
 
             {/* Right: Quick Settings & Menu */}
-            <div className="flex items-center space-x-1 text-[10px]">
+            <div className="flex items-center space-x-1 text-xs">
               <button
                 onClick={handleToggleSound}
-                className="px-2 py-0.5 border border-[#6e470b] hover:border-[#ffb000] text-[#ffb000] cursor-pointer"
+                className="px-2 py-0.5 border border-[var(--term-border)] hover:border-[var(--term-main)] text-[var(--term-main)] cursor-pointer"
                 title="Включение / выключение звука"
               >
                 {isMuted ? 'ЗВУК: ВЫКЛ' : 'ЗВУК: ВКЛ'}
@@ -1032,25 +1742,25 @@ export default function App() {
                   terminalAudio.playSwitchClick();
                   setScreen('settings');
                 }}
-                className="px-2 py-0.5 border border-[#6e470b] hover:border-[#ffb000] text-[#ffb000] cursor-pointer"
+                className="px-2 py-0.5 border border-[var(--term-border)] hover:border-[var(--term-main)] text-[var(--term-main)] cursor-pointer"
                 title="Параметры терминала"
               >
                 ⚙
               </button>
               <button
                 onClick={handleReturnToMenu}
-                className="px-2 py-0.5 border border-[#6e470b] hover:border-[#ffb000] text-[#ffb000] cursor-pointer"
+                className="px-2 py-0.5 border border-[var(--term-border)] hover:border-[var(--term-main)] text-[var(--term-main)] cursor-pointer"
               >
                 МЕНЮ
               </button>
             </div>
           </header>
         ) : (
-          <header className="shrink-0 border-b border-[#3d2607] bg-[#100a04] px-3 py-1.5 flex items-center justify-between text-xs font-mono z-20">
+          <header className="shrink-0 border-b border-[var(--term-border-dark)] bg-[var(--term-panel)] px-3 py-1.5 flex items-center justify-between text-xs font-mono z-20">
             <span className="font-extrabold crt-term-text tracking-wider">
               АСУ «РЕСПУБЛИКА-1989» // СИСТЕМА УПРАВЛЕНИЯ ГОСУДАРСТВОМ
             </span>
-            <span className="text-[10px] text-[#8c5b0f]">СВЯЗЬ: АКТИВНА</span>
+            <span className="text-xs text-[var(--term-dim)] font-semibold">СВЯЗЬ: АКТИВНА</span>
           </header>
         )}
 
@@ -1069,41 +1779,41 @@ export default function App() {
             <div className="flex-1 flex flex-col justify-between py-3 text-center px-4 overflow-y-auto">
               <div className="flex flex-col items-center mt-2">
                 <div className="mb-2">
-                  <svg width="48" height="48" viewBox="0 0 100 100" className="drop-shadow-[0_0_8px_rgba(255,176,0,0.6)]">
+                  <svg width="48" height="48" viewBox="0 0 100 100" className="drop-shadow-[0_0_8px_var(--term-glow)]">
                     <polygon
                       points="50,5 64,36 98,36 71,57 81,91 50,70 19,91 29,57 2,36 36,36"
                       fill="none"
-                      stroke="var(--term-color, #ffb000)"
+                      stroke="var(--term-main)"
                       strokeWidth="4"
                     />
                     <polygon
                       points="50,15 60,39 85,39 65,55 72,80 50,65 28,80 35,55 15,39 40,39"
-                      fill="var(--term-color, #ffb000)"
+                      fill="var(--term-main)"
                       opacity="0.15"
                     />
                     <path
                       d="M 52 42 C 43 40 40 48 42 56 C 44 64 53 66 59 62 L 62 66 C 54 71 42 68 38 57 C 35 46 41 35 53 37 Z"
-                      fill="var(--term-color, #ffb000)"
+                      fill="var(--term-main)"
                     />
-                    <rect x="42" y="52" width="16" height="4" transform="rotate(-40 46 54)" fill="var(--term-color, #ffb000)" />
-                    <rect x="44" y="52" width="4" height="18" transform="rotate(-40 46 54)" fill="var(--term-color, #ffb000)" />
+                    <rect x="42" y="52" width="16" height="4" transform="rotate(-40 46 54)" fill="var(--term-main)" />
+                    <rect x="44" y="52" width="4" height="18" transform="rotate(-40 46 54)" fill="var(--term-main)" />
                   </svg>
                 </div>
 
                 <h1 className="text-xl sm:text-2xl md:text-3xl font-black tracking-widest crt-term-text">
                   АСУ-РЕСПУБЛИКА 1989
                 </h1>
-                <div className="text-xs text-[#8c5b0f] font-mono tracking-widest mt-1">
+                <div className="text-xs text-[var(--term-dim)] font-mono font-semibold tracking-widest mt-1">
                   ПОШАГОВАЯ СТРАТЕГИЯ «КАБИНЕТ ПЕРВОГО СЕКРЕТАРЯ»
                 </div>
 
-                <div className="w-full max-w-[340px] flex items-center justify-between my-3 px-2 py-1 border-t border-b border-[#6e470b] text-[#ffb000] text-[10px] md:text-xs tracking-widest opacity-80 font-mono">
+                <div className="w-full max-w-[340px] flex items-center justify-between my-3 px-2 py-1 border-t border-b border-[var(--term-border)] text-[var(--term-main)] text-xs tracking-widest opacity-80 font-mono">
                   <span>+.-..--.------</span>
-                  <span className="inline-block w-3 h-1.5 bg-[#ffb000]"></span>
+                  <span className="inline-block w-3 h-1.5 bg-[var(--term-main)]"></span>
                   <span>.---.</span>
-                  <span className="inline-block w-4 h-1.5 bg-[#ffb000]"></span>
+                  <span className="inline-block w-4 h-1.5 bg-[var(--term-main)]"></span>
                   <span>.-.-</span>
-                  <span className="inline-block w-2 h-1.5 bg-[#ffb000]"></span>
+                  <span className="inline-block w-2 h-1.5 bg-[var(--term-main)]"></span>
                   <span>----.-+</span>
                 </div>
               </div>
@@ -1112,7 +1822,7 @@ export default function App() {
                 <button
                   onClick={() => handleMenuSelect('НАЧАТЬ СЕАНС', 'candidate')}
                   disabled={isTypingCommand}
-                  className="group flex items-center justify-between p-2.5 border border-[#6e470b] hover:border-[#ffb000] hover:bg-[#ffb000]/10 transition cursor-pointer text-sm crt-term-text"
+                  className="group flex items-center justify-between p-2.5 border border-[var(--term-border)] hover:border-[var(--term-main)] hover:bg-[var(--term-main)]/10 transition cursor-pointer text-sm crt-term-text"
                 >
                   <span className="font-bold">[1] ЗАНЯТЬ КАБИНЕТ</span>
                   <span className="opacity-0 group-hover:opacity-100 transition">▶</span>
@@ -1121,10 +1831,10 @@ export default function App() {
                 <button
                   onClick={() => handleMenuSelect('АРХИВ ДАННЫХ', 'archive')}
                   disabled={isTypingCommand}
-                  className="group flex items-center justify-between p-2.5 border border-[#6e470b] hover:border-[#ffb000] hover:bg-[#ffb000]/10 transition cursor-pointer text-sm crt-term-text"
+                  className="group flex items-center justify-between p-2.5 border border-[var(--term-border)] hover:border-[var(--term-main)] hover:bg-[var(--term-main)]/10 transition cursor-pointer text-sm crt-term-text"
                 >
                   <span className="font-bold">[2] АРХИВ ОСОБЫХ ПАПОК</span>
-                  <span className="text-xs text-[#8c5b0f] group-hover:text-[#ffb000] transition">
+                  <span className="text-xs text-[var(--term-dim)] group-hover:text-[var(--term-main)] font-semibold transition">
                     [{unlockedEndings.length}/13]
                   </span>
                 </button>
@@ -1132,18 +1842,18 @@ export default function App() {
                 <button
                   onClick={() => handleMenuSelect('НАСТРОЙКИ СИСТЕМЫ', 'settings')}
                   disabled={isTypingCommand}
-                  className="group flex items-center justify-between p-2.5 border border-[#6e470b] hover:border-[#ffb000] hover:bg-[#ffb000]/10 transition cursor-pointer text-sm crt-term-text"
+                  className="group flex items-center justify-between p-2.5 border border-[var(--term-border)] hover:border-[var(--term-main)] hover:bg-[var(--term-main)]/10 transition cursor-pointer text-sm crt-term-text"
                 >
                   <span className="font-bold">[3] ПАРАМЕТРЫ ТЕРМИНАЛА</span>
                   <span className="opacity-0 group-hover:opacity-100 transition">⚙</span>
                 </button>
               </div>
 
-              <div className="w-full max-w-[380px] mx-auto text-left px-2 py-2 border-t border-[#3d2607] font-mono">
+              <div className="w-full max-w-[380px] mx-auto text-left px-2 py-2 border-t border-[var(--term-border-dark)] font-mono">
                 <div className="text-xs crt-term-text flex items-center space-x-1">
                   <span>ВЫБЕРИТЕ РЕЖИМ &gt;</span>
                   <span className="font-bold tracking-wider">{commandInput}</span>
-                  <span className="inline-block w-2.5 h-4 bg-[#ffb000] animate-pulse">█</span>
+                  <span className="inline-block w-2.5 h-4 bg-[var(--term-main)] animate-pulse">█</span>
                 </div>
               </div>
             </div>
@@ -1154,18 +1864,18 @@ export default function App() {
           {/* ========================================================= */}
           {screen === 'candidate' && (
             <div className="flex-1 flex flex-col justify-between p-2 md:p-3 text-xs font-mono overflow-y-auto">
-              <div className="border border-[#ffb000] bg-[#100a04] p-3 md:p-4 flex-1 flex flex-col justify-between shadow-[0_0_35px_rgba(255,176,0,0.2)]">
+              <div className="border border-[var(--term-border)] bg-[var(--term-panel)] p-3 md:p-4 flex-1 flex flex-col justify-between shadow-[0_0_35px_var(--term-glow)]">
                 <div>
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-[#6e470b] pb-2 mb-2 gap-1">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-[var(--term-border)] pb-2 mb-2 gap-1">
                     <div>
                       <h2 className="text-xs md:text-sm font-black crt-term-text tracking-wider uppercase">
                         [ КАДРОВЫЙ РЕЗЕРВ ЦК КПСС // УТВЕРЖДЕНИЕ КАНДИДАТУРЫ ]
                       </h2>
-                      <div className="text-[9px] text-[#8c5b0f]">
+                      <div className="text-xs text-[var(--term-dim)] font-semibold">
                         ОТДЕЛ ОРГАНИЗАЦИОННО-ПАРТИЙНОЙ РАБОТЫ • ЛИЧНОЕ ДЕЛО № 89-К
                       </div>
                     </div>
-                    <div className="px-2 py-0.5 border border-[#ff2a00] bg-[#ff2a00]/15 text-[#ff2a00] text-[9px] font-bold tracking-widest uppercase">
+                    <div className="px-2 py-0.5 border border-[#ff2a00] bg-[#ff2a00]/15 text-[#ff2a00] text-xs font-bold tracking-widest uppercase">
                       ★ СОВЕРШЕННО СЕКРЕТНО ★
                     </div>
                   </div>
@@ -1183,12 +1893,12 @@ export default function App() {
                           }}
                           className={`p-2 border text-left transition cursor-pointer ${
                             isSelected
-                              ? 'border-[#ffb000] bg-[#ffb000]/20 text-[#ffb000] font-bold shadow-[0_0_12px_rgba(255,176,0,0.3)]'
-                              : 'border-[#4a341b] text-[#8c5b0f] hover:border-[#ffb000]/60 hover:text-[#ffb000] bg-[#0c0803]'
+                              ? 'border-[var(--term-main)] bg-[var(--term-main)]/20 text-[var(--term-main)] font-bold shadow-[0_0_12px_var(--term-glow)]'
+                              : 'border-[var(--term-border-dark)] text-[var(--term-dim)] hover:border-[var(--term-main)]/60 hover:text-[var(--term-main)] bg-[var(--term-bg)] font-medium'
                           }`}
                         >
-                          <div className="text-[10px] md:text-[11px] font-black truncate">{bg.title}</div>
-                          <div className="text-[8.5px] text-[#8c5b0f] truncate mt-0.5">{bg.subtitle.split(',')[0]}</div>
+                          <div className="text-xs font-black truncate">{bg.title}</div>
+                          <div className="text-[11px] text-[var(--term-dim)] font-semibold truncate mt-0.5">{bg.subtitle.split(',')[0]}</div>
                         </button>
                       );
                     })}
@@ -1202,35 +1912,35 @@ export default function App() {
                     return (
                       <div className="flex flex-col md:flex-row gap-3">
                         <div className="w-full md:w-[160px] shrink-0 flex flex-col items-center">
-                          <div className="w-full h-[150px] border border-[#ffb000] bg-[#0a0603] p-1 flex items-center justify-center relative">
+                          <div className="w-full h-[150px] border border-[var(--term-border)] bg-[var(--term-bg)] p-1 flex items-center justify-center relative">
                             <TerminalPortrait
                               archetype={portraitArchetype}
                               phosphorColor={settings.phosphorColor}
                             />
                           </div>
-                          <div className="w-full mt-1.5 p-1 border border-[#3d2607] bg-[#080502] text-center text-[8.5px] text-[#8c5b0f]">
+                          <div className="w-full mt-1.5 p-1 border border-[var(--term-border-dark)] bg-[var(--term-bg)] text-center text-[11px] text-[var(--term-dim)] font-bold">
                             ГРИФ: «ОСОБАЯ ПАПКА»
                           </div>
                         </div>
 
                         <div className="flex-1 space-y-2">
-                          <div className="border-b border-[#3d2607] pb-1">
-                            <h3 className="text-sm font-extrabold text-[#ffb000]">{currentBg.title}</h3>
-                            <div className="text-[10px] text-[#8c5b0f] font-bold">{currentBg.subtitle}</div>
+                          <div className="border-b border-[var(--term-border-dark)] pb-1">
+                            <h3 className="text-sm font-extrabold text-[var(--term-main)]">{currentBg.title}</h3>
+                            <div className="text-xs text-[var(--term-dim)] font-bold">{currentBg.subtitle}</div>
                           </div>
 
-                          <div className="p-2 border border-[#6e470b] bg-[#0d0904] text-[10.5px] leading-relaxed text-[#ffb000]">
-                            <span className="text-[9px] text-[#8c5b0f] font-bold block mb-0.5 tracking-wider">
+                          <div className="p-2 border border-[var(--term-border)] bg-[var(--term-bg)] text-xs leading-relaxed text-[var(--term-main)]">
+                            <span className="text-[11px] text-[var(--term-dim)] font-bold block mb-0.5 tracking-wider">
                               ХАРАКТЕРИСТИКА ИЗ СПЕЦХРАНА:
                             </span>
                             {currentBg.dossier}
                           </div>
 
                           <div className="space-y-1.5">
-                            <div className="p-1.5 border border-[#33ff33]/50 bg-[#33ff33]/10 text-[#33ff33] text-[10px] leading-snug">
+                            <div className="p-1.5 border border-[#33ff33]/50 bg-[#33ff33]/10 text-[#33ff33] text-xs leading-snug">
                               <span className="font-black">★ ПРЕИМУЩЕСТВО ({currentBg.perkTitle}):</span> {currentBg.perkDesc}
                             </div>
-                            <div className="p-1.5 border border-[#ff2a00]/50 bg-[#ff2a00]/10 text-[#ff2a00] text-[10px] leading-snug">
+                            <div className="p-1.5 border border-[#ff2a00]/50 bg-[#ff2a00]/10 text-[#ff2a00] text-xs leading-snug">
                               <span className="font-black">▲ РИСК:</span> {currentBg.flawDesc}
                             </div>
                           </div>
@@ -1240,16 +1950,16 @@ export default function App() {
                   })()}
                 </div>
 
-                <div className="pt-3 mt-3 border-t border-[#6e470b] flex flex-col sm:flex-row gap-2">
+                <div className="pt-3 mt-3 border-t border-[var(--term-border)] flex flex-col sm:flex-row gap-2">
                   <button
                     onClick={() => startSessionWithBackground(inspectingBackground)}
-                    className="flex-1 py-2.5 border-2 border-[#ffb000] bg-[#ffb000] text-black font-black text-xs md:text-sm hover:bg-[#ffb000]/80 tracking-wider transition cursor-pointer shadow-[0_0_15px_rgba(255,176,0,0.4)]"
+                    className="flex-1 py-2.5 border-2 border-[var(--term-main)] bg-[var(--term-main)] text-black font-black text-xs md:text-sm hover:opacity-90 tracking-wider transition cursor-pointer shadow-[0_0_15px_var(--term-glow)]"
                   >
                     [ УТВЕРДИТЬ В ДОЛЖНОСТИ ПЕРВОГО СЕКРЕТАРЯ ]
                   </button>
                   <button
                     onClick={handleReturnToMenu}
-                    className="px-4 py-2.5 border border-[#6e470b] hover:border-[#ffb000] text-[#ffb000] font-bold text-xs hover:bg-[#ffb000]/10 transition cursor-pointer"
+                    className="px-4 py-2.5 border border-[var(--term-border)] hover:border-[var(--term-main)] text-[var(--term-main)] font-bold text-xs hover:bg-[var(--term-main)]/10 transition cursor-pointer"
                   >
                     В ГЛАВНОЕ МЕНЮ
                   </button>
@@ -1263,35 +1973,35 @@ export default function App() {
           {/* ========================================================= */}
           {screen === 'briefing' && (
             <div onClick={handleSkipBriefing} className="flex-1 flex flex-col justify-between p-2 md:p-3 cursor-pointer">
-              <div className="border border-[#ffb000] p-3 md:p-4 bg-[#0e0904] flex-1 flex flex-col justify-between font-mono">
+              <div className="border border-[var(--term-border)] p-3 md:p-4 bg-[var(--term-panel)] flex-1 flex flex-col justify-between font-mono">
                 <div className="space-y-1.5 text-xs md:text-sm leading-relaxed crt-term-text">
                   {briefingLines.slice(0, briefingLineIdx).map((line, idx) => (
                     <div
                       key={idx}
                       className={
                         idx === 0
-                          ? 'font-bold text-center tracking-widest border-b border-[#6e470b] pb-2 mb-2 text-[#ffb000]'
+                          ? 'font-bold text-center tracking-widest border-b border-[var(--term-border)] pb-2 mb-2 text-[var(--term-main)]'
                           : idx < 5
-                          ? 'opacity-70 text-[10px]'
+                          ? 'opacity-75 text-xs text-[var(--term-dim)] font-semibold'
                           : 'my-0.5'
                       }
                     >
                       {line}
                     </div>
                   ))}
-                  {!briefingDone && <div className="inline-block w-2 h-3.5 bg-[#ffb000] animate-pulse">█</div>}
+                  {!briefingDone && <div className="inline-block w-2 h-3.5 bg-[var(--term-main)] animate-pulse">█</div>}
                 </div>
 
-                <div className="mt-3 pt-2 border-t border-[#6e470b] flex flex-col items-center">
+                <div className="mt-3 pt-2 border-t border-[var(--term-border)] flex flex-col items-center">
                   {briefingDone ? (
                     <button
                       onClick={handleSkipBriefing}
-                      className="w-full py-2.5 border-2 border-[#ffb000] bg-[#ffb000]/10 hover:bg-[#ffb000] hover:text-black font-extrabold text-sm tracking-widest transition cursor-pointer"
+                      className="w-full py-2.5 border-2 border-[var(--term-main)] bg-[var(--term-main)]/10 hover:bg-[var(--term-main)] hover:text-black text-[var(--term-main)] font-extrabold text-sm tracking-widest transition cursor-pointer"
                     >
                       [ ЗАНЯТЬ РАБОЧИЙ КАБИНЕТ ➔ ]
                     </button>
                   ) : (
-                    <span className="text-[10px] text-[#8c5b0f] tracking-wider animate-pulse">
+                    <span className="text-xs text-[var(--term-dim)] font-semibold tracking-wider animate-pulse">
                       [ КЛИКНИТЕ ДЛЯ УСКОРЕНИЯ ]
                     </span>
                   )}
@@ -1301,557 +2011,86 @@ export default function App() {
           )}
 
           {/* ========================================================= */}
-          {/* SCREEN: GAMEPLAY - CABINET STRATEGY INTERFACE             */}
+          {/* SCREEN: GAMEPLAY - 2.5D INTERACTIVE CABINET SCENE         */}
           {/* ========================================================= */}
           {screen === 'game' && (
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden font-mono">
-              {/* 5-Module Cabinet Switcher Tabs */}
-              <nav className="shrink-0 flex items-center border-b border-[#3d2607] bg-[#0e0904] px-1 py-1 gap-1 overflow-x-auto text-[10px] sm:text-[11px]">
-                <button
-                  onClick={() => {
-                    terminalAudio.playSwitchToggle();
-                    setActiveModule('dispatch');
-                  }}
-                  className={`px-2.5 py-1.5 border transition cursor-pointer font-bold flex items-center space-x-1 ${
-                    activeModule === 'dispatch'
-                      ? 'border-[#ffb000] bg-[#ffb000]/20 text-[#ffb000]'
-                      : 'border-[#3d2607] text-[#8c5b0f] hover:border-[#ffb000]/50 hover:text-[#ffb000]'
-                  }`}
-                >
-                  <span>1. ДЕПЕША</span>
-                  {!urgentDossierResolved && (
-                    <span className="w-2 h-2 rounded-full bg-[#ff2a00] animate-pulse" title="Требуется решение!" />
-                  )}
-                </button>
-
-                <button
-                  onClick={() => {
-                    terminalAudio.playSwitchToggle();
-                    setActiveModule('map');
-                  }}
-                  className={`px-2.5 py-1.5 border transition cursor-pointer font-bold flex items-center space-x-1 ${
-                    activeModule === 'map'
-                      ? 'border-[#ffb000] bg-[#ffb000]/20 text-[#ffb000]'
-                      : 'border-[#3d2607] text-[#8c5b0f] hover:border-[#ffb000]/50 hover:text-[#ffb000]'
-                  }`}
-                >
-                  <span>2. КАРТА И УЗЛЫ</span>
-                  {brokenNodesCount > 0 && (
-                    <span className="px-1 bg-[#ff2a00]/30 border border-[#ff2a00] text-[#ff2a00] text-[8.5px] rounded">
-                      {brokenNodesCount}
-                    </span>
-                  )}
-                </button>
-
-                <button
-                  onClick={() => {
-                    terminalAudio.playSwitchToggle();
-                    setActiveModule('hotline');
-                  }}
-                  className={`px-2.5 py-1.5 border transition cursor-pointer font-bold ${
-                    activeModule === 'hotline'
-                      ? 'border-[#ffb000] bg-[#ffb000]/20 text-[#ffb000]'
-                      : 'border-[#3d2607] text-[#8c5b0f] hover:border-[#ffb000]/50 hover:text-[#ffb000]'
-                  }`}
-                >
-                  3. ВЧ-СВЯЗЬ
-                </button>
-
-                <button
-                  onClick={() => {
-                    terminalAudio.playSwitchToggle();
-                    setActiveModule('kgb');
-                  }}
-                  className={`px-2.5 py-1.5 border transition cursor-pointer font-bold ${
-                    activeModule === 'kgb'
-                      ? 'border-[#ffb000] bg-[#ffb000]/20 text-[#ffb000]'
-                      : 'border-[#3d2607] text-[#8c5b0f] hover:border-[#ffb000]/50 hover:text-[#ffb000]'
-                  }`}
-                >
-                  4. КАБИНЕТ КГБ
-                </button>
-
-                <button
-                  onClick={() => {
-                    terminalAudio.playSwitchToggle();
-                    setActiveModule('decrees');
-                  }}
-                  className={`px-2.5 py-1.5 border transition cursor-pointer font-bold flex items-center space-x-1 ${
-                    activeModule === 'decrees'
-                      ? 'border-[#ffb000] bg-[#ffb000]/20 text-[#ffb000]'
-                      : 'border-[#3d2607] text-[#8c5b0f] hover:border-[#ffb000]/50 hover:text-[#ffb000]'
-                  }`}
-                >
-                  <span>5. ПОСТАНОВЛЕНИЯ</span>
-                  {activeDecreesCount > 0 && (
-                    <span className="px-1 bg-[#33ff33]/20 border border-[#33ff33] text-[#33ff33] text-[8.5px] rounded">
-                      {activeDecreesCount}
-                    </span>
-                  )}
-                </button>
-              </nav>
-
-              {/* Module Content Container */}
-              <div className="flex-1 min-h-0 overflow-y-auto p-2 sm:p-3 relative">
-                {/* -------------------------------------------------- */}
-                {/* MODULE 1: ДЕПЕША МЕСЯЦА                            */}
-                {/* -------------------------------------------------- */}
-                {activeModule === 'dispatch' && urgentDossier && (
-                  <div className="h-full flex flex-col justify-between max-w-2xl mx-auto space-y-2">
-                    <div className="border border-[#6e470b] bg-[#110b06] p-3 flex-1 flex flex-col justify-between">
-                      <div>
-                        {/* Dispatch Top Meta */}
-                        <div className="flex items-center justify-between border-b border-[#3d2607] pb-1.5 mb-2 text-[10px]">
-                          <span className="text-[#8c5b0f]">{urgentDossier.actTitle}</span>
-                          <span className="px-1.5 py-0.5 border border-[#ffb000]/40 text-[#ffb000]">
-                            РЕГИОН: {urgentDossier.region ? REGION_META[urgentDossier.region].short : 'РЕСПУБЛИКА'}
-                          </span>
-                        </div>
-
-                        {/* Title & Sender */}
-                        <h2 className="text-sm md:text-base font-extrabold text-[#ffb000] mb-2 tracking-wide">
-                          {urgentDossier.senderTitle}
-                        </h2>
-
-                        {/* Portrait & Text */}
-                        <div className="flex flex-col sm:flex-row gap-3 items-start my-2">
-                          <div className="w-20 h-20 sm:w-24 sm:h-24 shrink-0 border border-[#ffb000] bg-[#0c0803] p-0.5">
-                            <TerminalPortrait
-                              archetype={urgentDossier.archetype}
-                              isEmergency={urgentDossier.isCrisis}
-                              phosphorColor={settings.phosphorColor}
-                            />
-                          </div>
-                          <div className="flex-1 text-xs md:text-sm leading-relaxed text-[#ffb000]/95 font-mono">
-                            {urgentDossier.text}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Choices / Stamped Resolution */}
-                      <div className="mt-3 pt-2 border-t border-[#3d2607]">
-                        {urgentDossierResolved ? (
-                          <div className="p-3 border-2 border-dashed border-[#33ff33] bg-[#33ff33]/10 text-center space-y-1">
-                            <div className="text-xs md:text-sm font-black text-[#33ff33] tracking-wider">
-                              ★ [РЕЗОЛЮЦИЯ УТВЕРЖДЕНА: {lastChoiceStamp}] ★
-                            </div>
-                            <div className="text-[10px] text-[#ffb000] opacity-80">
-                              Решение принято к исполнению. Вы можете распорядиться оставшимися ОВ в других модулях или
-                              перейти к следующему месяцу.
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            <div className="text-[10px] text-[#8c5b0f] font-bold text-center tracking-wider">
-                              РЕЗОЛЮЦИЯ ПЕРВОГО СЕКРЕТАРЯ (РЕШЕНИЕ НЕ ТРАТИТ ОВ):
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {/* Left Choice Button */}
-                              <button
-                                onClick={() => handleResolveDispatch('left')}
-                                className="p-2.5 border border-[#ffb000] bg-[#ffb000]/10 hover:bg-[#ffb000] hover:text-black transition text-left cursor-pointer group"
-                              >
-                                <div className="font-extrabold text-xs text-[#ffb000] group-hover:text-black">
-                                  [А] {urgentDossier.leftChoice.label}
-                                </div>
-                                {urgentDossier.leftChoice.effectNote && (
-                                  <div className="text-[9.5px] text-[#8c5b0f] group-hover:text-black/80 mt-1">
-                                    {urgentDossier.leftChoice.effectNote}
-                                  </div>
-                                )}
-                                {/* Predictive hints modifiers */}
-                                {settings.predictiveHints && (
-                                  <div className="mt-1 pt-1 border-t border-[#3d2607]/80 text-[8.5px] text-[#33ff33] group-hover:text-black/90 font-mono space-x-1">
-                                    {urgentDossier.leftChoice.economy?.shelfSupplyPercent !== undefined && (
-                                      <span>Полки {urgentDossier.leftChoice.economy.shelfSupplyPercent > 0 ? '+' : ''}{urgentDossier.leftChoice.economy.shelfSupplyPercent}%</span>
-                                    )}
-                                    {urgentDossier.leftChoice.economy?.rubleBudgetMillions !== undefined && (
-                                      <span>Казна {urgentDossier.leftChoice.economy.rubleBudgetMillions > 0 ? '+' : ''}{urgentDossier.leftChoice.economy.rubleBudgetMillions}М ₽</span>
-                                    )}
-                                    {urgentDossier.leftChoice.profile?.sovereignty !== undefined && (
-                                      <span>Суверенитет +{urgentDossier.leftChoice.profile.sovereignty}%</span>
-                                    )}
-                                  </div>
-                                )}
-                              </button>
-
-                              {/* Right Choice Button */}
-                              <button
-                                onClick={() => handleResolveDispatch('right')}
-                                className="p-2.5 border border-[#ffb000] bg-[#ffb000]/10 hover:bg-[#ffb000] hover:text-black transition text-left cursor-pointer group"
-                              >
-                                <div className="font-extrabold text-xs text-[#ffb000] group-hover:text-black">
-                                  [Б] {urgentDossier.rightChoice.label}
-                                </div>
-                                {urgentDossier.rightChoice.effectNote && (
-                                  <div className="text-[9.5px] text-[#8c5b0f] group-hover:text-black/80 mt-1">
-                                    {urgentDossier.rightChoice.effectNote}
-                                  </div>
-                                )}
-                                {/* Predictive hints modifiers */}
-                                {settings.predictiveHints && (
-                                  <div className="mt-1 pt-1 border-t border-[#3d2607]/80 text-[8.5px] text-[#ff9900] group-hover:text-black/90 font-mono space-x-1">
-                                    {urgentDossier.rightChoice.economy?.moscowPlanFulfilled !== undefined && (
-                                      <span>План {urgentDossier.rightChoice.economy.moscowPlanFulfilled > 0 ? '+' : ''}{urgentDossier.rightChoice.economy.moscowPlanFulfilled}%</span>
-                                    )}
-                                    {urgentDossier.rightChoice.profile?.autocracy !== undefined && (
-                                      <span>Автократия +{urgentDossier.rightChoice.profile.autocracy}%</span>
-                                    )}
-                                  </div>
-                                )}
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* -------------------------------------------------- */}
-                {/* MODULE 2: ТАКТИЧЕСКАЯ КАРТА И УЗЛЫ                 */}
-                {/* -------------------------------------------------- */}
-                {activeModule === 'map' && (
-                  <div className="space-y-3">
-                    {/* Sectors Tension Infobar */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 text-[10px]">
-                      {(Object.keys(regions) as RegionId[]).map((rId) => {
-                        const r = regions[rId];
-                        const isRiot = r.tension >= 80;
-                        const isWarn = r.tension >= 50;
-
-                        return (
-                          <div
-                            key={rId}
-                            className={`p-1.5 border bg-[#0d0904] flex flex-col justify-between ${
-                              isRiot
-                                ? 'border-[#ff2a00] text-[#ff2a00]'
-                                : isWarn
-                                ? 'border-[#ff9900] text-[#ff9900]'
-                                : 'border-[#4a341b] text-[#ffb000]'
-                            }`}
-                          >
-                            <div className="font-bold truncate">{r.name}</div>
-                            <div className="flex items-center justify-between mt-1 text-[9px]">
-                              <span>НАПРЯЖЕНИЕ:</span>
-                              <span className="font-extrabold">{r.tension}%</span>
-                            </div>
-                            <div className="w-full bg-[#201407] h-1.5 mt-1 overflow-hidden">
-                              <div
-                                className={`h-full transition-all ${
-                                  isRiot ? 'bg-[#ff2a00]' : isWarn ? 'bg-[#ff9900]' : 'bg-[#33ff33]'
-                                }`}
-                                style={{ width: `${r.tension}%` }}
-                              />
-                            </div>
-                            {isRiot && (
-                              <div className="text-[8px] font-bold text-[#ff2a00] mt-1 truncate">
-                                ⚠ {REGION_META[rId].riotTitle}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Infrastructure Nodes Grid (8 Nodes) */}
-                    <div>
-                      <div className="text-[10px] text-[#8c5b0f] font-bold uppercase mb-1.5">
-                        КЛЮЧЕВЫЕ ОБЪЕКТЫ ИНФРАСТРУКТУРЫ РЕСПУБЛИКИ:
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                        {Object.values(nodes).map((node) => {
-                          const isOperational = node.status === 'operational';
-                          const statusColor =
-                            node.status === 'operational'
-                              ? 'border-[#33ff33]/40 text-[#33ff33]'
-                              : node.status === 'blocked'
-                              ? 'border-[#ff9900] text-[#ff9900]'
-                              : 'border-[#ff2a00] text-[#ff2a00]';
-
-                          const statusLabel =
-                            node.status === 'operational'
-                              ? 'В СТРОЮ'
-                              : node.status === 'blocked'
-                              ? 'ЗАБЛОКИРОВАН'
-                              : node.status === 'damaged'
-                              ? 'АВАРИЙНЫЙ СБОЙ'
-                              : 'ЗАХВАЧЕН';
-
-                          return (
-                            <div
-                              key={node.id}
-                              className={`p-2 border bg-[#110b06] flex flex-col justify-between ${
-                                isOperational ? 'border-[#3d2607]' : 'border-[#ff9900] shadow-[0_0_10px_rgba(255,153,0,0.2)]'
-                              }`}
-                            >
-                              <div>
-                                <div className="flex items-center justify-between mb-1">
-                                  <span className="font-bold text-xs text-[#ffb000]">{node.name}</span>
-                                  <span className={`px-1.5 py-0.2 border text-[9px] font-bold ${statusColor}`}>
-                                    {statusLabel}
-                                  </span>
-                                </div>
-                                <p className="text-[10px] text-[#8c5b0f] leading-snug mb-2">{node.description}</p>
-                                <div className="text-[9px] text-[#8c5b0f] border-t border-[#261807] pt-1">
-                                  Урон при отказе: Дефицит +{node.impact.deficitDelta}%, План {node.impact.moscowPlanDelta}
-                                  %, Напряжение +{node.impact.tensionDelta}%
-                                </div>
-                              </div>
-
-                              <div className="mt-2 pt-1.5 border-t border-[#261807] flex justify-end">
-                                {!isOperational ? (
-                                  <button
-                                    onClick={() => handleRepairNode(node.id)}
-                                    className="px-2.5 py-1 border border-[#ff9900] bg-[#ff9900]/15 hover:bg-[#ff9900] hover:text-black text-[#ff9900] font-bold text-[10px] transition cursor-pointer"
-                                  >
-                                    [ ЛИКВИДИРОВАТЬ СБОЙ (1 ОВ, -8М ₽) ]
-                                  </button>
-                                ) : (
-                                  <span className="text-[9px] text-[#33ff33]/70 font-mono">● РАБОТАЕТ В НОРМЕ</span>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* -------------------------------------------------- */}
-                {/* MODULE 3: ВЧ-СВЯЗЬ (КРЕМЛЕВКА)                     */}
-                {/* -------------------------------------------------- */}
-                {activeModule === 'hotline' && (
-                  <div className="flex flex-col md:flex-row gap-3 h-full">
-                    <div className="w-full md:w-[220px] shrink-0 space-y-1.5 overflow-y-auto">
-                      {Object.values(actors).map((actor) => {
-                        const isSelected = selectedActorId === actor.id;
-                        return (
-                          <button
-                            key={actor.id}
-                            onClick={() => {
-                              terminalAudio.playTeletypeClick();
-                              setSelectedActorId(actor.id);
-                            }}
-                            className={`w-full p-2 border text-left transition cursor-pointer flex items-center space-x-2 ${
-                              isSelected
-                                ? 'border-[#ffb000] bg-[#ffb000]/15 text-[#ffb000]'
-                                : 'border-[#3d2607] text-[#8c5b0f] hover:border-[#ffb000]/50 hover:text-[#ffb000] bg-[#0c0803]'
-                            }`}
-                          >
-                            <div className="w-8 h-8 shrink-0 border border-[#ffb000]/40 p-0.5">
-                              <TerminalPortrait
-                                archetype={actor.avatar as ArchetypeId}
-                                phosphorColor={settings.phosphorColor}
-                              />
-                            </div>
-                            <div className="min-w-0 flex-1 text-[10px]">
-                              <div className="font-bold truncate">{actor.name}</div>
-                              <div className="text-[8px] text-[#8c5b0f] truncate">{actor.title.split(',')[0]}</div>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {actors[selectedActorId] && (
-                      <div className="flex-1 border border-[#6e470b] bg-[#110b06] p-3 flex flex-col justify-between overflow-y-auto">
-                        {(() => {
-                          const actor = actors[selectedActorId];
-                          return (
-                            <div className="space-y-3">
-                              <div className="flex items-start justify-between border-b border-[#3d2607] pb-2">
-                                <div>
-                                  <h3 className="text-sm font-extrabold text-[#ffb000]">{actor.name}</h3>
-                                  <div className="text-[10px] text-[#8c5b0f]">{actor.title}</div>
-                                </div>
-                                <div className="text-right text-[10px]">
-                                  <div className="text-[#33ff33]">ЛОЯЛЬНОСТЬ: {actor.loyalty}%</div>
-                                  <div className="text-[#ff9900]">ВЛИЯНИЕ: {actor.influence}%</div>
-                                </div>
-                              </div>
-
-                              <p className="text-[10.5px] text-[#ffb000]/90 leading-relaxed p-2 border border-[#3d2607] bg-[#0a0603]">
-                                {actor.dossier}
-                              </p>
-
-                              <div>
-                                <div className="text-[10px] text-[#8c5b0f] font-bold uppercase mb-1.5">
-                                  ДИАЛОГ И ДИРЕКТИВЫ ПО ВЧ-СВЯЗИ (СТОИМОСТЬ: 1 ОВ):
-                                </div>
-                                <div className="space-y-2">
-                                  {actor.callOptions.map((opt) => (
-                                    <div
-                                      key={opt.id}
-                                      className="p-2 border border-[#3d2607] bg-[#0c0804] flex flex-col sm:flex-row sm:items-center justify-between gap-2"
-                                    >
-                                      <div>
-                                        <div className="text-xs font-bold text-[#ffb000]">{opt.label}</div>
-                                        <div className="text-[9.5px] text-[#8c5b0f]">{opt.effectDescription}</div>
-                                      </div>
-                                      <button
-                                        onClick={() => handleExecuteCallOption(actor.id, opt.id)}
-                                        className="shrink-0 px-2.5 py-1 border border-[#ffb000] bg-[#ffb000]/10 hover:bg-[#ffb000] hover:text-black font-bold text-[10px] transition cursor-pointer"
-                                      >
-                                        [ СВЯЗАТЬСЯ ]
-                                      </button>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* -------------------------------------------------- */}
-                {/* MODULE 4: КАБИНЕТ КГБ                              */}
-                {/* -------------------------------------------------- */}
-                {activeModule === 'kgb' && (
-                  <div className="space-y-3">
-                    <div className="p-2 border border-[#ff2a00]/40 bg-[#ff2a00]/10 text-[#ff2a00] text-[10px] flex items-center justify-between">
-                      <span className="font-bold">★ 7-Е УПРАВЛЕНИЕ КГБ ССР // ОПЕРАТИВНЫЕ МАТЕРИАЛЫ</span>
-                      <span className="text-[9px]">ГРИФ «ОСОБАЯ ПАПКА»</span>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {Object.values(actors).map((actor) => {
-                        const isWiretap = actor.surveillance === 'wiretap';
-                        const isInfiltrated = actor.surveillance === 'infiltrated';
-
-                        return (
-                          <div key={actor.id} className="p-2.5 border border-[#3d2607] bg-[#110b06] space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="font-bold text-xs text-[#ffb000]">{actor.name}</span>
-                              <span
-                                className={`text-[9px] font-bold px-1.5 py-0.5 border ${
-                                  isInfiltrated
-                                    ? 'border-[#33ff33] text-[#33ff33] bg-[#33ff33]/15'
-                                    : isWiretap
-                                    ? 'border-[#ff9900] text-[#ff9900] bg-[#ff9900]/15 animate-pulse'
-                                    : 'border-[#4a341b] text-[#8c5b0f]'
-                                }`}
-                              >
-                                {isInfiltrated
-                                  ? 'ПОЛНЫЙ КОНТРОЛЬ'
-                                  : isWiretap
-                                  ? 'ВЕДЕТСЯ ПРОСЛУШКА'
-                                  : 'БЕЗ НАБЛЮДЕНИЯ'}
-                              </span>
-                            </div>
-
-                            {actor.unlockedKompromat.map((k) => (
-                              <div key={k.id} className="p-1.5 border border-[#2d1b09] bg-[#0c0803] text-[9.5px]">
-                                <div className="font-bold text-[#ffb000]">{k.title}</div>
-                                <div className="text-[#8c5b0f] mt-0.5">{k.description}</div>
-                                {k.used && (
-                                  <span className="inline-block mt-1 text-[8px] text-[#33ff33] font-bold">
-                                    ✓ КОМПРОМАТ УСПЕШНО ИСПОЛЬЗОВАН ДЛЯ ШАНТАЖА
-                                  </span>
-                                )}
-                              </div>
-                            ))}
-
-                            <div className="flex justify-end pt-1">
-                              {actor.surveillance === 'none' && (
-                                <button
-                                  onClick={() => handleAuthorizeWiretap(actor.id)}
-                                  className="px-2 py-1 border border-[#ff2a00] text-[#ff2a00] hover:bg-[#ff2a00] hover:text-black font-bold text-[9.5px] transition cursor-pointer"
-                                >
-                                  [ САНКЦИОНИРОВАТЬ ПРОСЛУШКУ (1 ОВ) ]
-                                </button>
-                              )}
-                              {actor.surveillance === 'wiretap' && (
-                                <span className="text-[9px] text-[#ff9900] italic">
-                                  Агентура собирает записи разговоров...
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* -------------------------------------------------- */}
-                {/* MODULE 5: ПОРТФЕЛЬ ПОСТАНОВЛЕНИЙ                   */}
-                {/* -------------------------------------------------- */}
-                {activeModule === 'decrees' && (
-                  <div className="space-y-2">
-                    <div className="text-[10px] text-[#8c5b0f] font-bold uppercase mb-1">
-                      ГОСУДАРСТВЕННЫЕ ПОСТАНОВЛЕНИЯ БЮРО ЦК (ПРИНЯТИЕ/ОТМЕНА СТОИТ 1 ОВ):
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {decrees.map((decree) => {
-                        return (
-                          <div
-                            key={decree.id}
-                            className={`p-2.5 border bg-[#110b06] flex flex-col justify-between ${
-                              decree.active
-                                ? 'border-[#33ff33] bg-[#33ff33]/5 shadow-[0_0_15px_rgba(51,255,51,0.15)]'
-                                : 'border-[#3d2607]'
-                            }`}
-                          >
-                            <div>
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="font-bold text-xs text-[#ffb000]">{decree.title}</span>
-                                <span
-                                  className={`text-[9px] font-bold px-1.5 py-0.5 border ${
-                                    decree.active
-                                      ? 'border-[#33ff33] text-[#33ff33] bg-[#33ff33]/20'
-                                      : 'border-[#4a341b] text-[#8c5b0f]'
-                                  }`}
-                                >
-                                  {decree.active ? 'ДЕЙСТВУЕТ' : 'НЕ ВВЕДЕН'}
-                                </span>
-                              </div>
-                              <p className="text-[10px] text-[#8c5b0f] leading-snug mb-2">{decree.description}</p>
-                              <div className="text-[9px] text-[#ffb000]/80 border-t border-[#261807] pt-1">
-                                Ежемесячный эффект:
-                                {decree.monthlyImpact.shelfSupplyPercent && ` Полки +${decree.monthlyImpact.shelfSupplyPercent}%`}
-                                {decree.monthlyImpact.rubleBudgetMillions && ` | Казна ${decree.monthlyImpact.rubleBudgetMillions > 0 ? '+' : ''}${decree.monthlyImpact.rubleBudgetMillions}М ₽`}
-                                {decree.monthlyImpact.moscowPlanFulfilled && ` | План ${decree.monthlyImpact.moscowPlanFulfilled > 0 ? '+' : ''}${decree.monthlyImpact.moscowPlanFulfilled}%`}
-                                {decree.monthlyImpact.tensionDelta && ` | Напряжение ${decree.monthlyImpact.tensionDelta > 0 ? '+' : ''}${decree.monthlyImpact.tensionDelta}%`}
-                              </div>
-                            </div>
-
-                            <div className="mt-2.5 pt-1.5 border-t border-[#261807] flex justify-end">
-                              <button
-                                onClick={() => handleToggleDecree(decree.id)}
-                                className={`px-2.5 py-1 border font-bold text-[10px] transition cursor-pointer ${
-                                  decree.active
-                                    ? 'border-[#ff2a00] text-[#ff2a00] hover:bg-[#ff2a00] hover:text-black'
-                                    : 'border-[#33ff33] text-[#33ff33] hover:bg-[#33ff33] hover:text-black'
-                                }`}
-                              >
-                                {decree.active ? '[ ОТМЕНИТЬ ДЕЙСТВИЕ (1 ОВ) ]' : '[ ВВЕСТИ В ДЕЙСТВИЕ (1 ОВ) ]'}
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+              {/* The 2.5D Cabinet Desk Scene Viewport */}
+              <div className="flex-1 min-h-0 relative overflow-hidden">
+                <CabinetDeskScene
+                  cameraFocus={cameraFocus}
+                  setCameraFocus={setCameraFocus}
+                  currentMonth={currentMonth}
+                  attentionPoints={attentionPoints}
+                  maxAttentionPoints={MAX_ATTENTION_POINTS}
+                  economy={economy}
+                  stats={stats}
+                  profile={profile}
+                  regions={regions}
+                  nodes={nodes}
+                  actors={actors}
+                  decrees={decrees}
+                  urgentDossier={urgentDossier}
+                  urgentDossierResolved={urgentDossierResolved}
+                  lastChoiceStamp={lastChoiceStamp}
+                  onResolveDispatch={handleResolveDispatch}
+                  onRepairDamagedMoney={handleRepairDamagedMoney}
+                  onRepairDamagedShelves={handleRepairDamagedShelves}
+                  onResolveBlockedConcession={handleResolveBlockedConcession}
+                  onStormInsurgents={handleStormInsurgents}
+                  onDeclareCurfew={handleDeclareCurfew}
+                  selectedActorId={selectedActorId}
+                  setSelectedActorId={setSelectedActorId}
+                  onExecuteCallOption={handleExecuteCallOption}
+                  incomingCall={incomingCall}
+                  onAnswerIncomingCall={handleAnswerIncomingCall}
+                  onAuthorizeWiretap={handleAuthorizeWiretap}
+                  onFreezeActorAssets={handleFreezeActorAssets}
+                  onToggleDecree={handleToggleDecree}
+                  phosphorColor={settings.phosphorColor}
+                  predictiveHints={settings.predictiveHints}
+                />
               </div>
 
               {/* Bottom Strategy Action Bar */}
-              <div className="shrink-0 border-t border-[#3d2607] bg-[#100a04] p-1.5 sm:p-2 flex items-center justify-between gap-2 z-20">
-                <div className="text-[10px] text-[#8c5b0f] truncate hidden sm:block">
-                  {!urgentDossierResolved ? '⚠ ТРЕБУЕТСЯ ПОДПИСАТЬ ДЕПЕШУ' : '✓ ДЕПЕША МЕСЯЦА УТВЕРЖДЕНА'}
+              <div className="shrink-0 border-t border-[var(--term-border-dark)] bg-[var(--term-panel)] px-2 py-1.5 flex items-center justify-between gap-2 z-20">
+                <div className="flex items-center space-x-2 text-xs font-semibold truncate">
+                  {!urgentDossierResolved ? (
+                    <span className="text-[#ff2a00] font-bold flex items-center space-x-1">
+                      <span className="w-2 h-2 rounded-full bg-[#ff2a00] animate-pulse inline-block" />
+                      <span>⚠ ТРЕБУЕТСЯ РЕЗОЛЮЦИЯ ПО ДЕПЕШЕ МЕСЯЦА (1 ОВ ИЛИ ПОД СУКНО)</span>
+                    </span>
+                  ) : (
+                    <span className="text-[#33ff33] font-bold flex items-center space-x-1">
+                      <span>✓ ДЕПЕША УТВЕРЖДЕНА: {lastChoiceStamp}</span>
+                    </span>
+                  )}
+                  {incomingCall && (
+                    <span className="px-1.5 py-0.5 border border-[#ff2a00] bg-[#ff2a00]/20 text-[#ff2a00] font-black animate-pulse">
+                      ☎ ЗВОНИТ ВЧ-ВЕРТУШКА!
+                    </span>
+                  )}
                 </div>
 
-                <button
-                  onClick={handleNextMonth}
-                  className="w-full sm:w-auto px-4 py-2 border-2 border-[#ffb000] bg-[#ffb000] text-black font-black text-xs md:text-sm hover:bg-[#ffb000]/80 transition cursor-pointer shadow-[0_0_15px_rgba(255,176,0,0.3)] flex items-center justify-center space-x-1"
-                >
-                  <span>[ ЗАВЕРШИТЬ МЕСЯЦ И ПЕРЕЙТИ ДАЛЬШЕ ➔ ]</span>
-                </button>
+                <div className="flex items-center space-x-2">
+                  {cameraFocus !== 'overview' && (
+                    <button
+                      onClick={() => {
+                        terminalAudio.playSwitchClick();
+                        setCameraFocus('overview');
+                      }}
+                      className="px-2.5 py-1.5 border border-[var(--term-border)] hover:border-[var(--term-main)] text-[var(--term-main)] text-xs font-bold transition cursor-pointer"
+                    >
+                      [ ◄ К СТОЛУ (ESC) ]
+                    </button>
+                  )}
+                  <button
+                    onClick={handleNextMonth}
+                    className="px-4 py-1.5 border-2 border-[var(--term-main)] bg-[var(--term-main)] text-black font-black text-xs md:text-sm hover:opacity-90 transition cursor-pointer shadow-[0_0_15px_var(--term-glow)] flex items-center justify-center space-x-1"
+                  >
+                    <span>[ ЗАВЕРШИТЬ МЕСЯЦ И ПЕРЕЙТИ ДАЛЬШЕ ➔ ]</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -1861,12 +2100,12 @@ export default function App() {
           {/* ========================================================= */}
           {screen === 'archive' && (
             <div className="flex-1 flex flex-col justify-between p-2 md:p-3 overflow-hidden text-xs font-mono">
-              <div className="border border-[#6e470b] bg-[#110b06] p-3 flex-1 flex flex-col overflow-hidden">
-                <div className="flex items-center justify-between border-b border-[#6e470b] pb-2 mb-2">
+              <div className="border border-[var(--term-border)] bg-[var(--term-panel)] p-3 flex-1 flex flex-col overflow-hidden">
+                <div className="flex items-center justify-between border-b border-[var(--term-border)] pb-2 mb-2">
                   <h2 className="text-sm md:text-base font-extrabold crt-term-text">
                     АРХИВ «ОСОБЫХ ПАПОК» ЦК КПСС
                   </h2>
-                  <span className="text-[#8c5b0f]">
+                  <span className="text-[var(--term-dim)] font-semibold">
                     ОТКРЫТО: {unlockedEndings.length} ИЗ 13
                   </span>
                 </div>
@@ -1875,27 +2114,27 @@ export default function App() {
                   <div className="flex-1 flex flex-col justify-between overflow-y-auto pr-1">
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="px-1.5 py-0.5 border border-[#ffb000] text-[10px] text-[#ffb000]">
+                        <span className="px-1.5 py-0.5 border border-[var(--term-border)] text-xs text-[var(--term-main)] font-bold">
                           {selectedDossier.code}
                         </span>
-                        <span className="text-[10px] text-[#8c5b0f]">
+                        <span className="text-xs text-[var(--term-dim)] font-semibold">
                           УСЛОВИЕ: {selectedDossier.trigger}
                         </span>
                       </div>
 
-                      <h3 className="text-base font-extrabold text-[#ffb000]">{selectedDossier.title}</h3>
+                      <h3 className="text-base font-extrabold text-[var(--term-main)]">{selectedDossier.title}</h3>
 
-                      <div className="p-2 border-2 border-dashed border-[#ffb000] text-[#ffb000] font-black text-center tracking-widest text-xs md:text-sm">
+                      <div className="p-2 border-2 border-dashed border-[var(--term-main)] text-[var(--term-main)] font-black text-center tracking-widest text-xs md:text-sm">
                         ★ {selectedDossier.stamp} ★
                       </div>
 
-                      <div className="space-y-2 text-[11px] leading-relaxed text-[#ffb000]">
+                      <div className="space-y-2 text-xs leading-relaxed text-[var(--term-main)]">
                         <div>
-                          <span className="text-[#8c5b0f] font-bold">ВЕРДИКТ: </span>
+                          <span className="text-[var(--term-dim)] font-bold">ВЕРДИКТ: </span>
                           <span className="font-bold">{selectedDossier.verdict}</span>
                         </div>
                         <p>{selectedDossier.description}</p>
-                        <p className="text-[#8c5b0f] italic border-t border-[#3d2607] pt-2">
+                        <p className="text-[var(--term-dim)] italic border-t border-[var(--term-border-dark)] pt-2">
                           Исторический контекст: {selectedDossier.historicalContext}
                         </p>
                       </div>
@@ -1903,7 +2142,7 @@ export default function App() {
 
                     <button
                       onClick={() => setSelectedDossier(null)}
-                      className="mt-4 w-full py-2 border border-[#6e470b] hover:border-[#ffb000] text-[#ffb000] font-bold cursor-pointer"
+                      className="mt-4 w-full py-2 border border-[var(--term-border)] hover:border-[var(--term-main)] text-[var(--term-main)] font-bold cursor-pointer"
                     >
                       ◀ ВЕРНУТЬСЯ К СПИСКУ ДОСЬЕ
                     </button>
@@ -1923,19 +2162,19 @@ export default function App() {
                           }}
                           className={`p-2 border transition ${
                             isUnlocked
-                              ? 'border-[#6e470b] hover:border-[#ffb000] bg-[#160f08] cursor-pointer'
-                              : 'border-[#291a07] text-[#4d320d] cursor-not-allowed bg-[#0a0704]'
+                              ? 'border-[var(--term-border-dark)] hover:border-[var(--term-main)] bg-[var(--term-panel-light)] cursor-pointer'
+                              : 'border-[var(--term-border-dark)] opacity-40 cursor-not-allowed bg-[var(--term-bg)]'
                           }`}
                         >
                           <div className="flex items-center justify-between">
-                            <span className="font-bold text-[11px]">
+                            <span className="font-bold text-xs">
                               {isUnlocked ? ending.code : '[ЗАСЕКРЕЧЕНО]'}
                             </span>
-                            <span className="text-[9px] opacity-75">
+                            <span className="text-xs opacity-80 font-semibold">
                               {isUnlocked ? (ending.category === 'grand' ? '★ ФИНАЛ 1991' : '● ДОСРОЧНО') : 'ЗАБЛОКИРОВАНО'}
                             </span>
                           </div>
-                          <div className="text-[11px] font-bold mt-0.5 truncate">
+                          <div className="text-xs font-bold mt-0.5 truncate">
                             {isUnlocked ? ending.title : '••••••••••••••••••••••••••••••'}
                           </div>
                         </div>
@@ -1947,7 +2186,7 @@ export default function App() {
                 {!selectedDossier && (
                   <button
                     onClick={handleReturnToMenu}
-                    className="mt-3 w-full py-2 border border-[#ffb000] text-[#ffb000] hover:bg-[#ffb000] hover:text-black font-bold cursor-pointer"
+                    className="mt-3 w-full py-2 border border-[var(--term-border)] text-[var(--term-main)] hover:bg-[var(--term-main)] hover:text-black font-bold cursor-pointer"
                   >
                     В ГЛАВНОЕ МЕНЮ
                   </button>
@@ -1974,39 +2213,39 @@ export default function App() {
           {/* ========================================================= */}
           {screen === 'ending' && currentEnding && (
             <div className="flex-1 flex flex-col justify-between p-2 md:p-3 overflow-y-auto text-xs font-mono">
-              <div className="border-2 border-[#ffb000] bg-[#100a05] p-3 md:p-4 flex-1 flex flex-col justify-between space-y-3">
+              <div className="border-2 border-[var(--term-border)] bg-[var(--term-panel)] p-3 md:p-4 flex-1 flex flex-col justify-between space-y-3">
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between border-b border-[#6e470b] pb-2">
+                  <div className="flex items-center justify-between border-b border-[var(--term-border)] pb-2">
                     <span className="font-extrabold text-sm crt-term-text">
                       АРХИВНОЕ ДЕЛО №1991 / {currentEnding.code}
                     </span>
-                    <span className="text-[10px] text-[#8c5b0f]">{formatMonthOnly(currentMonth)}</span>
+                    <span className="text-xs text-[var(--term-dim)] font-semibold">{formatMonthOnly(currentMonth)}</span>
                   </div>
 
                   <div
                     className={`p-3 border-4 border-dashed text-center font-black tracking-widest text-sm md:text-base ${
                       currentEnding.category === 'grand'
                         ? 'border-[#33ff33] text-[#33ff33] bg-[#33ff33]/10'
-                        : 'border-[#ffb000] text-[#ffb000] bg-[#ffb000]/10'
+                        : 'border-[var(--term-main)] text-[var(--term-main)] bg-[var(--term-main)]/10'
                     }`}
                   >
                     ★ {currentEnding.stamp} ★
                   </div>
 
                   <div>
-                    <h2 className="text-lg font-black text-[#ffb000] mb-1">{currentEnding.title}</h2>
-                    <div className="text-[11px] text-[#ffb000] font-bold">
+                    <h2 className="text-lg font-black text-[var(--term-main)] mb-1">{currentEnding.title}</h2>
+                    <div className="text-xs text-[var(--term-main)] font-bold">
                       ВЕРДИКТ: <span className="underline">{currentEnding.verdict}</span>
                     </div>
                   </div>
 
-                  <p className="text-[11px] md:text-xs leading-relaxed text-[#ffb000]">
+                  <p className="text-xs md:text-sm leading-relaxed text-[var(--term-main)]">
                     {currentEnding.description}
                   </p>
 
-                  <div className="p-2 border border-[#3d2607] bg-[#0c0804] space-y-1 text-[10px]">
-                    <div className="font-bold text-[#8c5b0f]">ИТОГОВАЯ СВОДКА ПРАВЛЕНИЯ:</div>
-                    <div className="grid grid-cols-2 gap-1 text-[#ffb000]">
+                  <div className="p-2 border border-[var(--term-border-dark)] bg-[var(--term-bg)] space-y-1 text-xs">
+                    <div className="font-bold text-[var(--term-dim)]">ИТОГОВАЯ СВОДКА ПРАВЛЕНИЯ:</div>
+                    <div className="grid grid-cols-2 gap-1 text-[var(--term-main)] font-semibold">
                       <div>ПРОДЕРЖАЛИСЬ: ХОД {currentMonth} ИЗ 36</div>
                       <div>СУВЕРЕНИТЕТ: {profile.sovereignty}%</div>
                       <div>АВТОКРАТИЯ: {profile.autocracy}%</div>
@@ -2014,24 +2253,24 @@ export default function App() {
                     </div>
                   </div>
 
-                  <p className="text-[10px] text-[#8c5b0f] italic border-t border-[#3d2607] pt-2">
+                  <p className="text-xs text-[var(--term-dim)] italic border-t border-[var(--term-border-dark)] pt-2">
                     Исторический контекст: {currentEnding.historicalContext}
                   </p>
                 </div>
 
-                <div className="pt-3 border-t border-[#6e470b] flex space-x-2">
+                <div className="pt-3 border-t border-[var(--term-border)] flex space-x-2">
                   <button
                     onClick={() => {
                       terminalAudio.playSwitchClick();
                       setScreen('candidate');
                     }}
-                    className="flex-1 py-2.5 border-2 border-[#ffb000] bg-[#ffb000] text-black font-extrabold text-xs md:text-sm hover:bg-[#ffb000]/80 transition cursor-pointer"
+                    className="flex-1 py-2.5 border-2 border-[var(--term-main)] bg-[var(--term-main)] text-black font-extrabold text-xs md:text-sm hover:opacity-90 transition cursor-pointer"
                   >
                     [ ОТКРЫТЬ НОВУЮ ПАПКУ ]
                   </button>
                   <button
                     onClick={handleReturnToMenu}
-                    className="px-4 py-2.5 border border-[#ffb000] text-[#ffb000] font-bold text-xs hover:bg-[#ffb000]/10 transition cursor-pointer"
+                    className="px-4 py-2.5 border border-[var(--term-border)] text-[var(--term-main)] font-bold text-xs hover:bg-[var(--term-main)]/10 transition cursor-pointer"
                   >
                     В МЕНЮ
                   </button>
@@ -2046,20 +2285,20 @@ export default function App() {
         {/* ========================================================= */}
         {showMonthlyReportModal && lastMonthSummary && (
           <div className="absolute inset-0 bg-black/85 z-40 flex items-center justify-center p-3 font-mono">
-            <div className="w-full max-w-lg border-2 border-[#ffb000] bg-[#0f0904] p-3 sm:p-4 shadow-[0_0_30px_rgba(255,176,0,0.3)] space-y-3">
-              <div className="flex items-center justify-between border-b border-[#6e470b] pb-2">
+            <div className="w-full max-w-lg border-2 border-[var(--term-border)] bg-[var(--term-panel)] p-3 sm:p-4 shadow-[0_0_30px_var(--term-glow)] space-y-3">
+              <div className="flex items-center justify-between border-b border-[var(--term-border)] pb-2">
                 <span className="font-extrabold text-xs sm:text-sm crt-term-text">
                   ПРАВИТЕЛЬСТВЕННАЯ ТЕЛЕГРАММА // ИТОГИ МЕСЯЦА
                 </span>
-                <span className="text-[10px] text-[#8c5b0f]">
+                <span className="text-xs text-[var(--term-dim)] font-semibold">
                   {formatMonthOnly(lastMonthSummary.prevMonth)}
                 </span>
               </div>
 
               {/* Economic summary */}
-              <div className="p-2 border border-[#3d2607] bg-[#0c0703] space-y-1 text-[10px]">
-                <div className="font-bold text-[#8c5b0f]">СВОДКА ИЗМЕНЕНИЯ ЭКОНОМИКИ:</div>
-                <div className="grid grid-cols-2 gap-1 text-[#ffb000]">
+              <div className="p-2 border border-[var(--term-border-dark)] bg-[var(--term-bg)] space-y-1 text-xs">
+                <div className="font-bold text-[var(--term-dim)]">СВОДКА ИЗМЕНЕНИЯ ЭКОНОМИКИ:</div>
+                <div className="grid grid-cols-2 gap-1 text-[var(--term-main)] font-semibold">
                   <div>
                     Казна:{' '}
                     {lastMonthSummary.economyChanges.rubleBudgetMillions
@@ -2089,10 +2328,10 @@ export default function App() {
 
               {/* Events & Intelligence notes */}
               {lastMonthSummary.notes.length > 0 && (
-                <div className="space-y-1 text-[10px] text-[#ffb000]/90 max-h-36 overflow-y-auto pr-1">
-                  <div className="font-bold text-[#8c5b0f]">ОПЕРАТИВНЫЕ СВОДКИ И ДОНЕСЕНИЯ:</div>
+                <div className="space-y-1 text-xs text-[var(--term-main)]/90 max-h-36 overflow-y-auto pr-1">
+                  <div className="font-bold text-[var(--term-dim)]">ОПЕРАТИВНЫЕ СВОДКИ И ДОНЕСЕНИЯ:</div>
                   {lastMonthSummary.notes.map((n, i) => (
-                    <div key={i} className="p-1 border border-[#2d1b09] bg-[#080502]">
+                    <div key={i} className="p-1 border border-[var(--term-border-dark)] bg-[var(--term-bg)]">
                       • {n}
                     </div>
                   ))}
@@ -2104,9 +2343,9 @@ export default function App() {
                   terminalAudio.playStampPress();
                   setShowMonthlyReportModal(false);
                 }}
-                className="w-full py-2.5 border-2 border-[#ffb000] bg-[#ffb000] text-black font-extrabold text-xs sm:text-sm hover:bg-[#ffb000]/80 transition cursor-pointer"
+                className="w-full py-2.5 border-2 border-[var(--term-main)] bg-[var(--term-main)] text-black font-extrabold text-xs sm:text-sm hover:opacity-90 transition cursor-pointer"
               >
-                [ ПРИНЯТЬ К СВЕДЕНИЮ // 3 ОВ НАЧИСЛЕНО ➔ ]
+                [ ПРИНЯТЬ К СВЕДЕНИЮ // {MAX_ATTENTION_POINTS} ОВ НАЧИСЛЕНО ➔ ]
               </button>
             </div>
           </div>
@@ -2117,22 +2356,22 @@ export default function App() {
         {/* ========================================================= */}
         {actionNotification && (
           <div className="absolute inset-0 bg-black/80 z-50 flex items-center justify-center p-3 font-mono">
-            <div className="w-full max-w-md border border-[#ffb000] bg-[#110b06] p-4 shadow-[0_0_25px_rgba(255,176,0,0.3)] space-y-3">
-              <div className="flex items-center justify-between border-b border-[#6e470b] pb-1.5">
-                <span className="font-extrabold text-xs text-[#ffb000]">{actionNotification.title}</span>
+            <div className="w-full max-w-md border border-[var(--term-border)] bg-[var(--term-panel)] p-4 shadow-[0_0_25px_var(--term-glow)] space-y-3">
+              <div className="flex items-center justify-between border-b border-[var(--term-border)] pb-1.5">
+                <span className="font-extrabold text-xs text-[var(--term-main)]">{actionNotification.title}</span>
                 {actionNotification.stamp && (
-                  <span className="px-1.5 py-0.5 border border-[#ffb000] text-[9px] font-bold text-[#ffb000]">
+                  <span className="px-1.5 py-0.5 border border-[var(--term-border)] text-xs font-bold text-[var(--term-main)]">
                     {actionNotification.stamp}
                   </span>
                 )}
               </div>
-              <p className="text-xs leading-relaxed text-[#ffb000]">{actionNotification.text}</p>
+              <p className="text-xs leading-relaxed text-[var(--term-main)]">{actionNotification.text}</p>
               <button
                 onClick={() => {
                   terminalAudio.playKeyClick();
                   setActionNotification(null);
                 }}
-                className="w-full py-2 border border-[#ffb000] bg-[#ffb000]/15 hover:bg-[#ffb000] hover:text-black font-bold text-xs transition cursor-pointer"
+                className="w-full py-2 border border-[var(--term-border)] bg-[var(--term-main)]/15 hover:bg-[var(--term-main)] hover:text-black font-bold text-xs transition cursor-pointer text-[var(--term-main)]"
               >
                 [ ЗАКРЫТЬ ]
               </button>
@@ -2144,16 +2383,16 @@ export default function App() {
         {isEmergency && <div className="absolute inset-0 crt-emergency-vignette z-25 pointer-events-none" />}
 
         {/* TASS Teletype Ticker Tape */}
-        <div className="relative z-20 w-full shrink-0 border-t border-[#3d2607] bg-[#0c0703] px-2 py-1.5 flex items-center overflow-hidden font-mono text-[9px] sm:text-[10px] md:text-[11px] crt-term-text shadow-[0_0_8px_rgba(255,176,0,0.2)] select-none">
-          <span className="shrink-0 font-bold bg-[#ffb000]/15 text-[#ffb000] px-1.5 py-0.5 border border-[#ffb000]/40 mr-2.5 tracking-wider text-[8.5px] sm:text-[9.5px]">
+        <div className="relative z-20 w-full shrink-0 border-t border-[var(--term-border-dark)] bg-[var(--term-bg)] px-2 py-1.5 flex items-center overflow-hidden font-mono text-xs crt-term-text shadow-[0_0_8px_var(--term-glow)] select-none">
+          <span className="shrink-0 font-bold bg-[var(--term-main)]/15 text-[var(--term-main)] px-1.5 py-0.5 border border-[var(--term-border)] mr-2.5 tracking-wider text-[11px] font-bold">
             [ТАСС / СВОДКА]
           </span>
           <div className="overflow-hidden whitespace-nowrap flex-1 flex items-center relative min-w-0">
             <div key={currentTassNews} className="inline-flex animate-marquee whitespace-nowrap items-center">
               <span className="pr-12">{currentTassNews}</span>
-              <span className="pr-12 text-[#8c5b0f]">+++ СВОДКА ТАСС +++</span>
+              <span className="pr-12 text-[var(--term-dim)] font-bold">+++ СВОДКА ТАСС +++</span>
               <span className="pr-12">{currentTassNews}</span>
-              <span className="pr-12 text-[#8c5b0f]">+++ СВОДКА ТАСС +++</span>
+              <span className="pr-12 text-[var(--term-dim)] font-bold">+++ СВОДКА ТАСС +++</span>
             </div>
           </div>
         </div>
@@ -2163,10 +2402,10 @@ export default function App() {
           <div
             className={`absolute inset-0 pointer-events-none crt-scanlines z-30 ${
               settings.scanlineDensity === 'low'
-                ? 'opacity-30'
+                ? 'opacity-15'
                 : settings.scanlineDensity === 'med'
-                ? 'opacity-65'
-                : 'opacity-95'
+                ? 'opacity-30'
+                : 'opacity-50'
             }`}
           />
         )}

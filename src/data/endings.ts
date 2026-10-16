@@ -197,20 +197,24 @@ export function determineStrategyEnding(
   month: number,
   supportedGkchp: boolean
 ): Ending | null {
-  // 1. Катастрофический крах потребительского рынка и голод
-  if (economy.shelfSupplyPercent <= 5) return ALL_ENDINGS.find(e => e.id === 'people_zero')!;
+  // 1. Срыв союзных поставок и жесткое отстранение Москвой (<= 10%)
+  if (economy.moscowPlanFulfilled <= 10) return ALL_ENDINGS.find(e => e.id === 'moscow_zero')!;
   
-  // 2. Срыв союзных поставок и жесткий ввод войск Москвы
-  if (economy.moscowPlanFulfilled <= 15) return ALL_ENDINGS.find(e => e.id === 'moscow_zero')!;
+  // 2. Катастрофический крах потребительского рынка и голодный бунт (<= 10%)
+  if (economy.shelfSupplyPercent <= 10) return ALL_ENDINGS.find(e => e.id === 'people_zero')!;
   
-  // 3. Банкротство республиканской казны
-  if (economy.rubleBudgetMillions <= -200) return ALL_ENDINGS.find(e => e.id === 'economy_zero')!;
+  // 3. Банкротство республиканской казны и финансовый дефолт (<= -25М ₽)
+  if (economy.rubleBudgetMillions <= -25) return ALL_ENDINGS.find(e => e.id === 'economy_zero')!;
 
   // 4. Политический путч или диктатура
   if (stats.kgb <= 0) return ALL_ENDINGS.find(e => e.id === 'kgb_zero')!;
   if (stats.kgb >= 100) return ALL_ENDINGS.find(e => e.id === 'kgb_max')!;
   if (stats.moscow <= 0) return ALL_ENDINGS.find(e => e.id === 'moscow_zero')!;
   if (stats.moscow >= 100) return ALL_ENDINGS.find(e => e.id === 'moscow_max')!;
+  if (stats.people <= 0) return ALL_ENDINGS.find(e => e.id === 'people_zero')!;
+  if (stats.people >= 100) return ALL_ENDINGS.find(e => e.id === 'people_max')!;
+  if (stats.economy <= 0) return ALL_ENDINGS.find(e => e.id === 'economy_zero')!;
+  if (stats.economy >= 100) return ALL_ENDINGS.find(e => e.id === 'economy_max')!;
 
   // 5. Финал: Декабрь 1991 (Ход 36) — Исторический исход
   if (month >= 36) {

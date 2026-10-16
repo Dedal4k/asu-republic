@@ -81,6 +81,30 @@ export interface ActorCallOption {
   executeText: string;
 }
 
+export type CameraFocus = 'overview' | 'dispatch' | 'map' | 'hotline' | 'kgb' | 'decrees';
+
+export interface IncomingHotlineCall {
+  id: string;
+  actorId: string;
+  actorName: string;
+  actorTitle: string;
+  avatar: ArchetypeId;
+  subject: string;
+  dialogue: string;
+  options: Array<{
+    id: string;
+    label: string;
+    effectNote: string;
+    rubleCost?: number;
+    currencyCost?: number;
+    loyaltyDelta?: number;
+    planDelta?: number;
+    shelfDelta?: number;
+    tensionDelta?: number;
+    unblockNodeId?: string;
+  }>;
+}
+
 export interface PoliticalActor {
   id: string;
   name: string;
@@ -90,6 +114,9 @@ export interface PoliticalActor {
   influence: number; // 0–100
   surveillance: SurveillanceLevel;
   surveillanceProgress?: number; // turns under active surveillance
+  plotProgress: number; // 0 to 3: conspiracy build-up
+  plotTitle: string; // name of the coup/strike/plot
+  threatDescription?: string; // what happens when plotProgress hits 3
   dossier: string;
   unlockedKompromat: KompromatItem[];
   callOptions: ActorCallOption[];

@@ -85,11 +85,16 @@ export function resetToDefaults(): SystemSettings {
 }
 
 export interface PhosphorThemeVars {
+  '--term-main': string;
   '--term-color': string;
   '--term-glow': string;
+  '--term-glow-low': string;
   '--term-dim': string;
-  '--term-bg': string;
   '--term-border': string;
+  '--term-border-dark': string;
+  '--term-bg': string;
+  '--term-panel': string;
+  '--term-panel-light': string;
   '--term-badge-bg': string;
   '--term-frame': string;
 }
@@ -98,32 +103,47 @@ export function getPhosphorTheme(color: PhosphorColor): PhosphorThemeVars {
   switch (color) {
     case 'green':
       return {
-        '--term-color': '#33ff33',
-        '--term-glow': 'rgba(51, 255, 51, 0.4)',
-        '--term-dim': 'rgba(51, 255, 51, 0.15)',
-        '--term-bg': '#001200',
-        '--term-border': '#155215',
-        '--term-badge-bg': 'rgba(51, 255, 51, 0.12)',
+        '--term-main': '#33ff66',
+        '--term-color': '#33ff66',
+        '--term-glow': 'rgba(51, 255, 102, 0.4)',
+        '--term-glow-low': 'rgba(51, 255, 102, 0.15)',
+        '--term-dim': '#2bd957',
+        '--term-border': '#1f993d',
+        '--term-border-dark': '#0e4a1d',
+        '--term-bg': '#020f04',
+        '--term-panel': '#051809',
+        '--term-panel-light': '#0b2611',
+        '--term-badge-bg': 'rgba(51, 255, 102, 0.12)',
         '--term-frame': '#081708',
       };
     case 'mono':
       return {
-        '--term-color': '#e5e7eb',
-        '--term-glow': 'rgba(229, 231, 235, 0.3)',
-        '--term-dim': 'rgba(229, 231, 235, 0.15)',
-        '--term-bg': '#0a0a0a',
-        '--term-border': '#4b5563',
-        '--term-badge-bg': 'rgba(229, 231, 235, 0.12)',
+        '--term-main': '#f0f6fc',
+        '--term-color': '#f0f6fc',
+        '--term-glow': 'rgba(240, 246, 252, 0.3)',
+        '--term-glow-low': 'rgba(240, 246, 252, 0.12)',
+        '--term-dim': '#afb8c1',
+        '--term-border': '#6e7681',
+        '--term-border-dark': '#30363d',
+        '--term-bg': '#0d1117',
+        '--term-panel': '#161b22',
+        '--term-panel-light': '#21262d',
+        '--term-badge-bg': 'rgba(240, 246, 252, 0.12)',
         '--term-frame': '#141414',
       };
     case 'amber':
     default:
       return {
+        '--term-main': '#ffb000',
         '--term-color': '#ffb000',
         '--term-glow': 'rgba(255, 176, 0, 0.4)',
-        '--term-dim': 'rgba(255, 176, 0, 0.15)',
-        '--term-bg': '#0d0900',
-        '--term-border': '#6e470b',
+        '--term-glow-low': 'rgba(255, 176, 0, 0.15)',
+        '--term-dim': '#d99616',
+        '--term-border': '#9e6b14',
+        '--term-border-dark': '#4a320a',
+        '--term-bg': '#0a0603',
+        '--term-panel': '#120c06',
+        '--term-panel-light': '#1a1208',
         '--term-badge-bg': 'rgba(255, 176, 0, 0.12)',
         '--term-frame': '#150f08',
       };
