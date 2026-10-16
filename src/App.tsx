@@ -252,13 +252,6 @@ export default function App() {
     );
   }, [isEmergency, stats]);
 
-  // Sound emergency alarm when emergency activates during active gameplay ONLY
-  useEffect(() => {
-    if (isEmergency && screen === 'game') {
-      terminalAudio.playEmergencyAlarm();
-    }
-  }, [isEmergency, screen]);
-
   // Current Act calculation (1..4) based on days
   const currentAct = useMemo(() => {
     if (daysSurvived < 180) return 1;
@@ -284,6 +277,42 @@ export default function App() {
 
   // Current Card
   const currentCard = cardDeck[currentCardIndex] || null;
+
+  // Sound emergency or warning siren when emergency or high tension activates during active gameplay ONLY
+  useEffect(() => {
+    if (screen === 'game') {
+      const maxTension = Math.max(...Object.values(regions).map((r) => r.tension));
+      if (isEmergency || maxTension >= 80) {
+        terminalAudio.playSiren(true);
+      } else if (maxTension >= 70) {
+        terminalAudio.playSiren(false);
+      }
+    }
+  }, [isEmergency, screen, regions]);
+
+  // Adaptive Music Controller synchronization (peace vs crisis vs off)
+  useEffect(() => {
+    const inGame = screen === 'game' || screen === 'hotline';
+    const maxTension = Math.max(...Object.values(regions).map((r) => r.tension));
+    const isCrisisMood = isEmergency || maxTension >= 70 || currentAct >= 3;
+    terminalAudio.updateAdaptiveMusic(inGame, isCrisisMood);
+  }, [screen, isEmergency, regions, currentAct]);
+
+  // Tactile paper slide effect when new card arrives on screen
+  useEffect(() => {
+    if (screen === 'game' && currentCard) {
+      terminalAudio.playPaperSlide();
+    }
+  }, [currentCardIndex, screen, currentCard]);
+
+  // Authentic teletype click series when TASS news headline updates during gameplay
+  const prevTassNewsRef = useRef<string>(currentTassNews);
+  useEffect(() => {
+    if (screen === 'game' && prevTassNewsRef.current !== currentTassNews) {
+      prevTassNewsRef.current = currentTassNews;
+      terminalAudio.playTeletype();
+    }
+  }, [currentTassNews, screen]);
 
   // Swipe tilt percentage (-1 to +1)
   const dragTilt = Math.min(Math.max(dragX / 140, -1), 1);
@@ -353,7 +382,8 @@ export default function App() {
 
   // Start game session with selected candidate background
   const startSessionWithBackground = useCallback((bgId: LeaderBackgroundId) => {
-    terminalAudio.playSwitchClick();
+    terminalAudio.playStampPress();
+    terminalAudio.startMachineAmbient();
     setLeaderBackground(bgId);
     try {
       localStorage.setItem('asu_leader_background', bgId);
@@ -398,7 +428,9 @@ export default function App() {
 
   // Clean transition to ending screen (resets emergency alarms)
   const triggerEnding = useCallback((ending: Ending) => {
-    terminalAudio.playSwitchClick();
+    terminalAudio.stopMachineAmbient();
+    terminalAudio.updateAdaptiveMusic(false, false);
+    terminalAudio.playStampPress();
     setBeamCollapse(true);
 
     setTimeout(() => {
@@ -439,7 +471,7 @@ export default function App() {
       if (!currentCard || cardAnimating || showSummaryModal || showMapModal || tassBulletin) return;
 
       const choice = isLeft ? currentCard.leftChoice : currentCard.rightChoice;
-      terminalAudio.playSwipeImpulse();
+      terminalAudio.playPaperSlide();
       setCardAnimating(isLeft ? 'left' : 'right');
 
       setTimeout(() => {
@@ -508,6 +540,9 @@ export default function App() {
         if (choice.decreeBadge || (currentCard.isCrisis && !isEmergency)) {
           setTriumphActive(true);
           setTriumphText(choice.decreeBadge ? `УКАЗ [${choice.decreeBadge}] ПОДПИСАН` : 'СТАБИЛИЗАЦИЯ СИТУАЦИИ');
+          if (choice.decreeBadge) {
+            terminalAudio.playStampPress();
+          }
           terminalAudio.playTriumphChime();
           setTimeout(() => setTriumphActive(false), 2000);
         }
@@ -769,7 +804,7 @@ export default function App() {
     // Siege of House of Soviets: capital riot blocks shelving!
     if (regions.capital.tension >= 80) return;
     if (shelveRemaining <= 0 || cardAnimating || !currentCard || showSummaryModal || showMapModal || tassBulletin) return;
-    terminalAudio.playSwipeImpulse();
+    terminalAudio.playPaperSlide();
     setShelveRemaining((prev) => prev - 1);
     setTriumphActive(true);
     setTriumphText('КАРТОЧКА ОТЛОЖЕНА ПОД СУКНО');
@@ -838,7 +873,7 @@ export default function App() {
     }));
     const nextCooldown = leaderBackground === 'technocrat' ? 2 : 3;
     setDirectiveCooldown(nextCooldown);
-    terminalAudio.playTriumphChime();
+    terminalAudio.playDirectiveLaunch();
     setTriumphActive(true);
     setTriumphText(`ГОСПЛАН: ФОНДЫ ПЕРЕБРОШЕНЫ ИЗ [${regions[calmest].name}]`);
     setTimeout(() => setTriumphActive(false), 2200);
@@ -861,7 +896,7 @@ export default function App() {
     }));
     const nextCooldown = leaderBackground === 'technocrat' ? 2 : 3;
     setDirectiveCooldown(nextCooldown);
-    terminalAudio.playTriumphChime();
+    terminalAudio.playDirectiveLaunch();
     setTriumphActive(true);
     setTriumphText(`ЭШЕЛОН СНАБЖЕНИЯ ПРИБЫЛ В [${regions[selectedMapRegion].name}]`);
     setTimeout(() => setTriumphActive(false), 2200);
@@ -918,7 +953,7 @@ export default function App() {
     }));
     const nextCooldown = leaderBackground === 'technocrat' ? 2 : 3;
     setDirectiveCooldown(nextCooldown);
-    terminalAudio.playTriumphChime();
+    terminalAudio.playDirectiveLaunch();
     setTriumphActive(true);
     setTriumphText(`ОСОБЫЙ РЕЖИМ ВВЕДЕН: [${regions[selectedMapRegion].name}]`);
     setTimeout(() => setTriumphActive(false), 2200);
@@ -956,7 +991,7 @@ export default function App() {
     }));
     const nextCooldown = leaderBackground === 'technocrat' ? 2 : 3;
     setDirectiveCooldown(nextCooldown);
-    terminalAudio.playTriumphChime();
+    terminalAudio.playDirectiveLaunch();
     setTriumphActive(true);
     setTriumphText(`САМОУПРАВЛЕНИЕ УТВЕРЖДЕНО: [${regions[selectedMapRegion].name}]`);
     setTimeout(() => setTriumphActive(false), 2200);
@@ -1005,8 +1040,10 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (screen !== 'game' || cardAnimating || showSummaryModal || showMapModal || tassBulletin) return;
       if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A' || e.key === 'ф' || e.key === 'Ф') {
+        terminalAudio.playKeyClick();
         applyChoice(true);
       } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D' || e.key === 'в' || e.key === 'В') {
+        terminalAudio.playKeyClick();
         applyChoice(false);
       }
     };
@@ -1048,7 +1085,9 @@ export default function App() {
 
   // Return to menu with clean stats and flags reset
   const handleReturnToMenu = () => {
-    terminalAudio.playSwitchClick();
+    terminalAudio.playSwitchToggle();
+    terminalAudio.stopMachineAmbient();
+    terminalAudio.updateAdaptiveMusic(false, false);
     const bgKey = leaderBackground || 'apparatchik';
     const bg = LEADER_BACKGROUNDS[bgKey];
     setStats({ ...bg.initialStats });
@@ -1097,7 +1136,7 @@ export default function App() {
     if (briefingLineIdx < briefingLines.length) {
       const timer = setTimeout(() => {
         setBriefingLineIdx((prev) => prev + 1);
-        terminalAudio.playTeletypeClick();
+        terminalAudio.playTeletype();
       }, 200);
       return () => clearTimeout(timer);
     } else {
@@ -1110,9 +1149,9 @@ export default function App() {
     if (!briefingDone) {
       setBriefingLineIdx(briefingLines.length);
       setBriefingDone(true);
-      terminalAudio.playSwitchClick();
+      terminalAudio.playSwitchToggle();
     } else {
-      terminalAudio.playSwitchClick();
+      terminalAudio.playSwitchToggle();
       setScreen('game');
     }
   };
@@ -1829,7 +1868,10 @@ export default function App() {
               <div className="shrink-0 flex items-center justify-between px-1 py-0.5 sm:py-1 text-xs font-mono my-0.5">
                 {/* Left Choice Button */}
                 <button
-                  onClick={() => applyChoice(true)}
+                  onClick={() => {
+                    terminalAudio.playKeyClick();
+                    applyChoice(true);
+                  }}
                   className={`flex-1 mr-1 p-1.5 sm:p-2 border text-left transition cursor-pointer active:scale-98 ${
                     dragX < -30
                       ? 'border-[#ff2a00] bg-[#ff2a00]/15 text-[#ff2a00] font-bold'
@@ -1846,7 +1888,10 @@ export default function App() {
 
                 {/* Right Choice Button */}
                 <button
-                  onClick={() => applyChoice(false)}
+                  onClick={() => {
+                    terminalAudio.playKeyClick();
+                    applyChoice(false);
+                  }}
                   className={`flex-1 ml-1 p-1.5 sm:p-2 border text-right transition cursor-pointer active:scale-98 ${
                     dragX > 30
                       ? 'border-[#33ff33] bg-[#33ff33]/15 text-[#33ff33] font-bold'
