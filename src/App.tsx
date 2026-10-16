@@ -9,9 +9,10 @@ import { TerminalPortrait } from './portraits';
 import { GAME_CARDS } from './data/cards';
 import { getTassHeadline } from './data/news';
 import { ALL_ENDINGS, determineEnding } from './data/endings';
-import { Card, Ending, PoliticalProfile, Stats, StatKey, RegionId, RegionState } from './types';
+import { Card, Ending, PoliticalProfile, Stats, StatKey, RegionId, RegionState, LeaderBackgroundId } from './types';
+import { LEADER_BACKGROUNDS, LEADER_BACKGROUND_LIST, BACKGROUND_ARCHETYPES } from './data/backgrounds';
 
-type ScreenMode = 'menu' | 'briefing' | 'game' | 'hotline' | 'archive' | 'settings' | 'ending';
+type ScreenMode = 'menu' | 'briefing' | 'candidate' | 'game' | 'hotline' | 'archive' | 'settings' | 'ending';
 
 interface TassBulletinData {
   prevAct: number;
@@ -135,12 +136,26 @@ export default function App() {
   // Selected archive ending for dossier inspection
   const [selectedDossier, setSelectedDossier] = useState<Ending | null>(null);
 
+  // Leader Background («ЛИЧНОЕ ДЕЛО КАНДИДАТА ЦК КПСС»)
+  const [leaderBackground, setLeaderBackground] = useState<LeaderBackgroundId | null>(() => {
+    try {
+      const saved = localStorage.getItem('asu_leader_background');
+      if (saved && (saved === 'apparatchik' || saved === 'director' || saved === 'kgb' || saved === 'technocrat')) {
+        return saved as LeaderBackgroundId;
+      }
+      return 'apparatchik';
+    } catch {
+      return 'apparatchik';
+    }
+  });
+  const [inspectingBackground, setInspectingBackground] = useState<LeaderBackgroundId>(
+    leaderBackground || 'apparatchik'
+  );
+
   // Core Game State
-  const [stats, setStats] = useState<Stats>({
-    moscow: 50,
-    people: 50,
-    kgb: 50,
-    economy: 50,
+  const [stats, setStats] = useState<Stats>(() => {
+    const bgKey = leaderBackground || 'apparatchik';
+    return { ...LEADER_BACKGROUNDS[bgKey].initialStats };
   });
 
   const [profile, setProfile] = useState<PoliticalProfile>({
@@ -163,14 +178,25 @@ export default function App() {
   const [storyFlags, setStoryFlags] = useState<string[]>([]);
 
   // Tactical Regions Architecture & Operational Directives
-  const [regions, setRegions] = useState<Record<RegionId, RegionState>>(INITIAL_REGIONS);
+  const [regions, setRegions] = useState<Record<RegionId, RegionState>>(() => {
+    const bgKey = leaderBackground || 'apparatchik';
+    const bg = LEADER_BACKGROUNDS[bgKey];
+    return {
+      capital: { ...INITIAL_REGIONS.capital, tension: bg.initialRegions.capital },
+      miners: { ...INITIAL_REGIONS.miners, tension: bg.initialRegions.miners },
+      agrarian: { ...INITIAL_REGIONS.agrarian, tension: bg.initialRegions.agrarian },
+      autonomy: { ...INITIAL_REGIONS.autonomy, tension: bg.initialRegions.autonomy },
+    };
+  });
   const [directiveCooldown, setDirectiveCooldown] = useState<number>(0);
   const [turnsPlayed, setTurnsPlayed] = useState<number>(0);
   const [showMapModal, setShowMapModal] = useState<boolean>(false);
   const [selectedMapRegion, setSelectedMapRegion] = useState<RegionId>('capital');
 
-  // New Mechanics: [ПОД СУКНО: 2] per Act and [СВОДКА] modal
-  const [shelveRemaining, setShelveRemaining] = useState<number>(2);
+  // New Mechanics: [ПОД СУКНО] per Act and [СВОДКА] modal
+  const [shelveRemaining, setShelveRemaining] = useState<number>(() => {
+    return leaderBackground === 'apparatchik' ? 4 : 2;
+  });
   const [showSummaryModal, setShowSummaryModal] = useState<boolean>(false);
   const [tassBulletin, setTassBulletin] = useState<TassBulletinData | null>(null);
 
@@ -296,29 +322,48 @@ export default function App() {
     ];
   }, []);
 
-  // Initialize new game session
-  const initializeDeck = useCallback(() => {
+  // Start game session with selected candidate background
+  const startSessionWithBackground = useCallback((bgId: LeaderBackgroundId) => {
+    terminalAudio.playSwitchClick();
+    setLeaderBackground(bgId);
+    try {
+      localStorage.setItem('asu_leader_background', bgId);
+    } catch {}
+
+    const bg = LEADER_BACKGROUNDS[bgId];
     const initialDeck = buildInitialDeck();
     setCardDeck(initialDeck);
     setCurrentCardIndex(0);
-    setStats({ moscow: 50, people: 50, kgb: 50, economy: 50 });
+    setStats({ ...bg.initialStats });
     setProfile({ sovereignty: 20, autocracy: 30, market: 20 });
     setDaysSurvived(0);
     setDecrees([]);
     setSupportedGkchp(false);
     setHotlineUsedInAct({ 1: false, 2: false, 3: false, 4: false });
     setStoryFlags([]);
-    setShelveRemaining(2);
+    setShelveRemaining(bgId === 'apparatchik' ? 4 : 2);
     setTurnsSinceCrisis(4);
     setCurrentEnding(null);
     setShowSummaryModal(false);
     setTassBulletin(null);
-    setRegions(INITIAL_REGIONS);
+    setRegions({
+      capital: { ...INITIAL_REGIONS.capital, tension: bg.initialRegions.capital },
+      miners: { ...INITIAL_REGIONS.miners, tension: bg.initialRegions.miners },
+      agrarian: { ...INITIAL_REGIONS.agrarian, tension: bg.initialRegions.agrarian },
+      autonomy: { ...INITIAL_REGIONS.autonomy, tension: bg.initialRegions.autonomy },
+    });
     setDirectiveCooldown(0);
     setTurnsPlayed(0);
     setShowMapModal(false);
     setSelectedMapRegion('capital');
+    setScreen('game');
   }, [buildInitialDeck]);
+
+  // Initialize new game session with current background
+  const initializeDeck = useCallback(() => {
+    const bgKey = leaderBackground || 'apparatchik';
+    startSessionWithBackground(bgKey);
+  }, [leaderBackground, startSessionWithBackground]);
 
   // Clean transition to ending screen (resets emergency alarms)
   const triggerEnding = useCallback((ending: Ending) => {
@@ -430,7 +475,7 @@ export default function App() {
             economy: stabilizeStat(newStats.economy),
           };
 
-          setShelveRemaining(2);
+          setShelveRemaining(leaderBackground === 'apparatchik' ? 4 : 2);
 
           const bulletinInfo = TASS_SUMMARIES[nextAct as 2 | 3 | 4];
           setTassBulletin({
@@ -455,6 +500,16 @@ export default function App() {
           tensionShift = -10; // Concessions: -8..-14%
         } else {
           tensionShift = -4;
+        }
+
+        // Leader Background vulnerabilities:
+        // apparatchik: capital tension growth +4%
+        if (cardRegion === 'capital' && tensionShift > 0 && leaderBackground === 'apparatchik') {
+          tensionShift += 4;
+        }
+        // kgb: autonomy tension growth +25% (rounded up)
+        if (cardRegion === 'autonomy' && tensionShift > 0 && leaderBackground === 'kgb') {
+          tensionShift = Math.ceil(tensionShift * 1.25);
         }
 
         // Story flag: 'koval_ally' reduces miner tension growth by 30%
@@ -530,7 +585,8 @@ export default function App() {
             finalStats.moscow = Math.min(100, finalStats.moscow + 1);
           }
           if (updatedRegions.miners.tension < 30) {
-            finalStats.economy = Math.min(100, finalStats.economy + 1);
+            const minerBonus = leaderBackground === 'director' ? 2 : 1;
+            finalStats.economy = Math.min(100, finalStats.economy + minerBonus);
           }
           if (updatedRegions.agrarian.tension < 30) {
             finalStats.people = Math.min(100, finalStats.people + 1);
@@ -606,6 +662,7 @@ export default function App() {
       triggerEnding,
       regions,
       turnsPlayed,
+      leaderBackground,
     ]
   );
 
@@ -664,28 +721,32 @@ export default function App() {
     otherRegions.sort((a, b) => regions[a].tension - regions[b].tension);
     const calmest = otherRegions[0];
 
+    const tensionDrop = leaderBackground === 'apparatchik' ? 30 : 25;
+    const tensionAdd = leaderBackground === 'apparatchik' ? 15 : 18;
+
     setRegions((prev) => ({
       ...prev,
       [selectedMapRegion]: {
         ...prev[selectedMapRegion],
-        tension: Math.max(0, prev[selectedMapRegion].tension - 25),
+        tension: Math.max(0, prev[selectedMapRegion].tension - tensionDrop),
       },
       [calmest]: {
         ...prev[calmest],
-        tension: Math.min(100, prev[calmest].tension + 18),
+        tension: Math.min(100, prev[calmest].tension + tensionAdd),
       },
     }));
-    setDirectiveCooldown(3);
+    const nextCooldown = leaderBackground === 'technocrat' ? 2 : 3;
+    setDirectiveCooldown(nextCooldown);
     terminalAudio.playTriumphChime();
     setTriumphActive(true);
     setTriumphText(`ГОСПЛАН: ФОНДЫ ПЕРЕБРОШЕНЫ ИЗ [${regions[calmest].name}]`);
     setTimeout(() => setTriumphActive(false), 2200);
-  }, [directiveCooldown, selectedMapRegion, regions]);
+  }, [directiveCooldown, selectedMapRegion, regions, leaderBackground]);
 
   const handleDirectiveSupplyTrain = useCallback(() => {
     if (directiveCooldown > 0) return;
     const isMinersRiot = regions.miners.tension >= 80;
-    const cost = isMinersRiot ? 12 : 6;
+    const cost = leaderBackground === 'director' ? (isMinersRiot ? 6 : 3) : (isMinersRiot ? 12 : 6);
     if (stats.economy < cost) return;
 
     const nextStats = { ...stats, economy: Math.max(0, stats.economy - cost) };
@@ -697,7 +758,8 @@ export default function App() {
         tension: Math.max(0, prev[selectedMapRegion].tension - 30),
       },
     }));
-    setDirectiveCooldown(3);
+    const nextCooldown = leaderBackground === 'technocrat' ? 2 : 3;
+    setDirectiveCooldown(nextCooldown);
     terminalAudio.playTriumphChime();
     setTriumphActive(true);
     setTriumphText(`ЭШЕЛОН СНАБЖЕНИЯ ПРИБЫЛ В [${regions[selectedMapRegion].name}]`);
@@ -708,18 +770,35 @@ export default function App() {
       setShowMapModal(false);
       triggerEnding(ending);
     }
-  }, [directiveCooldown, regions, stats, selectedMapRegion, profile, daysSurvived, supportedGkchp, triggerEnding]);
+  }, [directiveCooldown, regions, stats, selectedMapRegion, profile, daysSurvived, supportedGkchp, triggerEnding, leaderBackground]);
 
   const handleDirectiveCurfew = useCallback(() => {
     if (directiveCooldown > 0) return;
     const voronovAlly = storyFlags.includes('voronov_ally');
-    const kgbCost = voronovAlly ? 3 : 6;
-    if (stats.kgb < kgbCost || stats.people < 4) return;
+    let kgbCost = 6;
+    let peopleCost = 4;
+    let curfewDuration = 3;
+
+    if (leaderBackground === 'kgb') {
+      kgbCost = voronovAlly ? 2 : 3;
+      peopleCost = 2;
+      curfewDuration = 4;
+    } else if (leaderBackground === 'technocrat') {
+      kgbCost = voronovAlly ? 6 : 9;
+      peopleCost = 4;
+      curfewDuration = 3;
+    } else {
+      kgbCost = voronovAlly ? 3 : 6;
+      peopleCost = 4;
+      curfewDuration = 3;
+    }
+
+    if (stats.kgb < kgbCost || stats.people < peopleCost) return;
 
     const nextStats = {
       ...stats,
       kgb: Math.max(0, stats.kgb - kgbCost),
-      people: Math.max(0, stats.people - 4),
+      people: Math.max(0, stats.people - peopleCost),
     };
     const nextProfile = {
       ...profile,
@@ -733,10 +812,11 @@ export default function App() {
       [selectedMapRegion]: {
         ...prev[selectedMapRegion],
         tension: Math.max(0, prev[selectedMapRegion].tension - 35),
-        curfewTurns: 3,
+        curfewTurns: curfewDuration,
       },
     }));
-    setDirectiveCooldown(3);
+    const nextCooldown = leaderBackground === 'technocrat' ? 2 : 3;
+    setDirectiveCooldown(nextCooldown);
     terminalAudio.playTriumphChime();
     setTriumphActive(true);
     setTriumphText(`ОСОБЫЙ РЕЖИМ ВВЕДЕН: [${regions[selectedMapRegion].name}]`);
@@ -747,18 +827,21 @@ export default function App() {
       setShowMapModal(false);
       triggerEnding(ending);
     }
-  }, [directiveCooldown, storyFlags, stats, profile, selectedMapRegion, regions, daysSurvived, supportedGkchp, triggerEnding]);
+  }, [directiveCooldown, storyFlags, stats, profile, selectedMapRegion, regions, daysSurvived, supportedGkchp, triggerEnding, leaderBackground]);
 
   const handleDirectiveSelfGov = useCallback(() => {
-    if (directiveCooldown > 0 || stats.moscow < 6) return;
+    const moscowCost = leaderBackground === 'director' ? 9 : (leaderBackground === 'technocrat' ? 4 : 6);
+    const sovGain = leaderBackground === 'technocrat' ? 8 : 6;
+
+    if (directiveCooldown > 0 || stats.moscow < moscowCost) return;
 
     const nextStats = {
       ...stats,
-      moscow: Math.max(0, stats.moscow - 6),
+      moscow: Math.max(0, stats.moscow - moscowCost),
     };
     const nextProfile = {
       ...profile,
-      sovereignty: Math.min(100, profile.sovereignty + 6),
+      sovereignty: Math.min(100, profile.sovereignty + sovGain),
     };
 
     setStats(nextStats);
@@ -770,7 +853,8 @@ export default function App() {
         tension: Math.max(0, prev[selectedMapRegion].tension - 25),
       },
     }));
-    setDirectiveCooldown(3);
+    const nextCooldown = leaderBackground === 'technocrat' ? 2 : 3;
+    setDirectiveCooldown(nextCooldown);
     terminalAudio.playTriumphChime();
     setTriumphActive(true);
     setTriumphText(`САМОУПРАВЛЕНИЕ УТВЕРЖДЕНО: [${regions[selectedMapRegion].name}]`);
@@ -781,7 +865,7 @@ export default function App() {
       setShowMapModal(false);
       triggerEnding(ending);
     }
-  }, [directiveCooldown, stats, profile, selectedMapRegion, regions, daysSurvived, supportedGkchp, triggerEnding]);
+  }, [directiveCooldown, stats, profile, selectedMapRegion, regions, daysSurvived, supportedGkchp, triggerEnding, leaderBackground]);
 
   // Pointer drag events for realistic card swipe
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -850,11 +934,8 @@ export default function App() {
             setMenuFlicker(false);
             setIsTypingCommand(false);
             setCommandInput('');
-            if (targetScreen === 'game') {
-              initializeDeck();
-              setScreen('briefing');
-              setBriefingLineIdx(0);
-              setBriefingDone(false);
+            if (targetScreen === 'candidate' || targetScreen === 'game') {
+              setScreen('candidate');
             } else {
               setScreen(targetScreen);
             }
@@ -867,17 +948,24 @@ export default function App() {
   // Return to menu with clean stats and flags reset
   const handleReturnToMenu = () => {
     terminalAudio.playSwitchClick();
-    setStats({ moscow: 50, people: 50, kgb: 50, economy: 50 });
+    const bgKey = leaderBackground || 'apparatchik';
+    const bg = LEADER_BACKGROUNDS[bgKey];
+    setStats({ ...bg.initialStats });
     setProfile({ sovereignty: 20, autocracy: 30, market: 20 });
     setDaysSurvived(0);
     setDecrees([]);
     setStoryFlags([]);
-    setRegions(INITIAL_REGIONS);
+    setRegions({
+      capital: { ...INITIAL_REGIONS.capital, tension: bg.initialRegions.capital },
+      miners: { ...INITIAL_REGIONS.miners, tension: bg.initialRegions.miners },
+      agrarian: { ...INITIAL_REGIONS.agrarian, tension: bg.initialRegions.agrarian },
+      autonomy: { ...INITIAL_REGIONS.autonomy, tension: bg.initialRegions.autonomy },
+    });
     setDirectiveCooldown(0);
     setTurnsPlayed(0);
     setShowMapModal(false);
     setSelectedMapRegion('capital');
-    setShelveRemaining(2);
+    setShelveRemaining(bgKey === 'apparatchik' ? 4 : 2);
     setTurnsSinceCrisis(4);
     setShowSummaryModal(false);
     setTassBulletin(null);
@@ -980,6 +1068,14 @@ export default function App() {
             </span>
             <span className="opacity-40">|</span>
             <span>СВЯЗЬ: УСТАНОВЛЕНА</span>
+            {leaderBackground && (
+              <>
+                <span className="opacity-40 hidden sm:inline">|</span>
+                <span className="text-[#ffb000] font-bold hidden sm:inline truncate max-w-[200px]" title={LEADER_BACKGROUNDS[leaderBackground].title}>
+                  [КАДРЫ: {LEADER_BACKGROUNDS[leaderBackground].title}]
+                </span>
+              </>
+            )}
           </div>
           <div className="flex items-center space-x-3">
             <span>ПАМЯТЬ: 98%</span>
@@ -1047,7 +1143,7 @@ export default function App() {
               {/* Menu items */}
               <div className="flex flex-col space-y-4 my-auto px-4 max-w-[380px] mx-auto w-full text-left">
                 <button
-                  onClick={() => handleMenuSelect('НАЧАТЬ СЕАНС', 'game')}
+                  onClick={() => handleMenuSelect('НАЧАТЬ СЕАНС', 'candidate')}
                   disabled={isTypingCommand}
                   className="group flex items-center justify-between p-2.5 border border-[#6e470b] hover:border-[#ffb000] hover:bg-[#ffb000]/10 transition cursor-pointer text-sm md:text-base crt-amber-text"
                 >
@@ -1091,6 +1187,185 @@ export default function App() {
                   <span>ВЫБЕРИТЕ РЕЖИМ &gt;</span>
                   <span className="font-bold tracking-wider">{commandInput}</span>
                   <span className="inline-block w-2.5 h-4 bg-[#ffb000] animate-pulse">█</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* SCREEN: LEADER BACKGROUND SELECTION (КАДРОВЫЙ РЕЗЕРВ ЦК)  */}
+          {/* ========================================================= */}
+          {screen === 'candidate' && (
+            <div className="flex-1 flex flex-col justify-between py-1 md:py-2 text-xs font-mono overflow-y-auto">
+              <div className="border-2 border-[#ffb000] bg-[#100a04] p-3 md:p-4 flex-1 flex flex-col justify-between shadow-[0_0_35px_rgba(255,176,0,0.2)]">
+                <div>
+                  {/* Top Header of Candidate Dossier */}
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-[#6e470b] pb-2 mb-3 gap-1">
+                    <div>
+                      <h2 className="text-xs md:text-sm font-black crt-amber-text tracking-wider uppercase">
+                        [ КАДРОВЫЙ РЕЗЕРВ ЦК КПСС // УТВЕРЖДЕНИЕ КАНДИДАТУРЫ ]
+                      </h2>
+                      <div className="text-[9px] text-[#8c5b0f]">
+                        ОТДЕЛ ОРГАНИЗАЦИОННО-ПАРТИЙНОЙ РАБОТЫ ЦК КПСС • ЛИЧНОЕ ДЕЛО № 89-К
+                      </div>
+                    </div>
+                    <div className="px-2 py-0.5 border border-[#ff2a00] bg-[#ff2a00]/15 text-[#ff2a00] text-[9px] md:text-[10px] font-bold tracking-widest uppercase">
+                      ★ СОВЕРШЕННО СЕКРЕТНО ★
+                    </div>
+                  </div>
+
+                  {/* Candidate Switcher Tabs */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 mb-3">
+                    {LEADER_BACKGROUND_LIST.map((bg) => {
+                      const isSelected = inspectingBackground === bg.id;
+                      return (
+                        <button
+                          key={bg.id}
+                          onClick={() => {
+                            terminalAudio.playTeletypeClick();
+                            setInspectingBackground(bg.id);
+                          }}
+                          className={`p-2 border text-left transition cursor-pointer ${
+                            isSelected
+                              ? 'border-[#ffb000] bg-[#ffb000]/20 text-[#ffb000] font-bold shadow-[0_0_12px_rgba(255,176,0,0.3)]'
+                              : 'border-[#4a341b] text-[#8c5b0f] hover:border-[#ffb000]/60 hover:text-[#ffb000] bg-[#0c0803]'
+                          }`}
+                        >
+                          <div className="text-[10px] md:text-[11px] font-black truncate">
+                            {bg.title}
+                          </div>
+                          <div className="text-[8.5px] text-[#8c5b0f] truncate mt-0.5">
+                            {bg.subtitle.split(',')[0]}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Active Candidate Detailed Dossier View */}
+                  {(() => {
+                    const currentBg = LEADER_BACKGROUNDS[inspectingBackground];
+                    const portraitArchetype = BACKGROUND_ARCHETYPES[inspectingBackground];
+
+                    return (
+                      <div className="flex flex-col md:flex-row gap-3">
+                        {/* Left: Monolithic SVG Portrait & File Tag */}
+                        <div className="w-full md:w-[170px] shrink-0 flex flex-col items-center">
+                          <div className="w-full h-[155px] md:h-[185px] border border-[#ffb000] bg-[#0a0603] p-1 flex items-center justify-center relative">
+                            <TerminalPortrait archetype={portraitArchetype} />
+                            <div className="absolute top-1 left-1 px-1 py-0.2 bg-black/80 border border-[#ffb000]/40 text-[7.5px] text-[#8c5b0f] font-mono">
+                              ЛИЦО-89
+                            </div>
+                          </div>
+                          <div className="w-full mt-1.5 p-1 border border-[#3d2607] bg-[#080502] text-center text-[8.5px] text-[#8c5b0f]">
+                            ГРИФ: «ОСОБАЯ ПАПКА»
+                          </div>
+                        </div>
+
+                        {/* Right: Personal Data, Dossier Text, Starting Stats & Perks */}
+                        <div className="flex-1 space-y-2.5">
+                          {/* Title & Rank */}
+                          <div className="border-b border-[#3d2607] pb-1.5">
+                            <h3 className="text-sm md:text-base font-extrabold text-[#ffb000]">
+                              {currentBg.title}
+                            </h3>
+                            <div className="text-[10px] md:text-[11px] text-[#8c5b0f] font-bold">
+                              {currentBg.subtitle}
+                            </div>
+                          </div>
+
+                          {/* Dossier Narrative Summary */}
+                          <div className="p-2 border border-[#6e470b] bg-[#0d0904] text-[10.5px] md:text-[11.5px] leading-relaxed text-[#ffb000]">
+                            <span className="text-[9px] text-[#8c5b0f] font-bold block mb-0.5 tracking-wider">
+                              СВОДКА ОТДЕЛА ОРГПАРТРАБОТЫ ЦК:
+                            </span>
+                            {currentBg.dossier}
+                          </div>
+
+                          {/* Initial Stats Badges (>50 green, <50 red, 50 amber) */}
+                          <div>
+                            <div className="text-[9px] text-[#8c5b0f] font-bold uppercase mb-1 tracking-wider">
+                              СТАРТОВЫЙ РЕСУРС ВЛАСТИ:
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px]">
+                              {(['moscow', 'people', 'kgb', 'economy'] as StatKey[]).map((key) => {
+                                const val = currentBg.initialStats[key];
+                                const label = statLabels[key];
+                                const isHigh = val > 50;
+                                const isLow = val < 50;
+                                const badgeColor = isHigh
+                                  ? 'border-[#33ff33] text-[#33ff33] bg-[#33ff33]/15'
+                                  : isLow
+                                  ? 'border-[#ff2a00] text-[#ff2a00] bg-[#ff2a00]/15'
+                                  : 'border-[#ffb000] text-[#ffb000] bg-[#ffb000]/10';
+
+                                return (
+                                  <div
+                                    key={key}
+                                    className={`p-1.5 border flex items-center justify-between font-mono ${badgeColor}`}
+                                  >
+                                    <span className="font-bold">{label}:</span>
+                                    <span className="font-extrabold">{val}%</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Initial Region Tension Badges */}
+                          <div>
+                            <div className="text-[9px] text-[#8c5b0f] font-bold uppercase mb-1 tracking-wider">
+                              СТАРТОВАЯ НАПРЯЖЕННОСТЬ СЕКТОРОВ:
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[9.5px]">
+                              {(['capital', 'miners', 'agrarian', 'autonomy'] as RegionId[]).map((rId) => {
+                                const tVal = currentBg.initialRegions[rId];
+                                const rMeta = REGION_META[rId];
+                                return (
+                                  <div
+                                    key={rId}
+                                    className="p-1 border border-[#3d2607] bg-[#0c0804] flex items-center justify-between text-[#ffb000]"
+                                  >
+                                    <span className="text-[#8c5b0f] font-bold">{rMeta.short}:</span>
+                                    <span className={tVal >= 30 ? 'text-[#ff9900] font-bold' : 'text-[#33ff33]'}>
+                                      {tVal}%
+                                    </span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Perk & Flaw Blocks */}
+                          <div className="space-y-1.5 pt-1">
+                            <div className="p-2 border border-[#33ff33]/50 bg-[#33ff33]/10 text-[#33ff33] text-[10px] md:text-[11px] leading-snug">
+                              <span className="font-black">★ ПРЕИМУЩЕСТВО АППАРАТА ({currentBg.perkTitle}):</span>{' '}
+                              {currentBg.perkDesc}
+                            </div>
+                            <div className="p-2 border border-[#ff2a00]/50 bg-[#ff2a00]/10 text-[#ff2a00] text-[10px] md:text-[11px] leading-snug">
+                              <span className="font-black">▲ ОПЕРАТИВНЫЙ РИСК:</span> {currentBg.flawDesc}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Bottom Actions Confirmation */}
+                <div className="pt-3 mt-3 border-t border-[#6e470b] flex flex-col sm:flex-row gap-2">
+                  <button
+                    onClick={() => startSessionWithBackground(inspectingBackground)}
+                    className="flex-1 py-2.5 border-2 border-[#ffb000] bg-[#ffb000] text-black font-black text-xs md:text-sm hover:bg-[#ffb000]/80 tracking-wider transition cursor-pointer shadow-[0_0_15px_rgba(255,176,0,0.4)]"
+                  >
+                    [ УТВЕРДИТЬ В ДОЛЖНОСТИ ПЕРВОГО СЕКРЕТАРЯ ]
+                  </button>
+                  <button
+                    onClick={handleReturnToMenu}
+                    className="px-4 py-2.5 border border-[#6e470b] hover:border-[#ffb000] text-[#ffb000] font-bold text-xs hover:bg-[#ffb000]/10 transition cursor-pointer"
+                  >
+                    В ГЛАВНОЕ МЕНЮ
+                  </button>
                 </div>
               </div>
             </div>
@@ -1561,11 +1836,21 @@ export default function App() {
                     <h3 className="text-xs md:text-sm font-black crt-amber-text tracking-wider">
                       [ ТАКТИЧЕСКИЙ ПЛАНШЕТ: КАРТА СЕКТОРОВ АСУ ]
                     </h3>
-                    <span className="text-[9px] text-[#8c5b0f]">
-                      {directiveCooldown > 0
-                        ? `● КАНАЛ ДИРЕКТИВ: ПЕРЕЗАРЯДКА (${directiveCooldown} ХОДА)`
-                        : '● КАНАЛ ДИРЕКТИВ: ГОТОВ К ИСПОЛНЕНИЮ'}
-                    </span>
+                    <div className="flex items-center space-x-2 text-[9px] text-[#8c5b0f]">
+                      <span>
+                        {directiveCooldown > 0
+                          ? `● КАНАЛ ДИРЕКТИВ: ПЕРЕЗАРЯДКА (${directiveCooldown} ХОДА)`
+                          : '● КАНАЛ ДИРЕКТИВ: ГОТОВ К ИСПОЛНЕНИЮ'}
+                      </span>
+                      {leaderBackground && (
+                        <>
+                          <span className="opacity-40">|</span>
+                          <span className="text-[#ffb000] font-bold">
+                            КАНДИДАТ: {LEADER_BACKGROUNDS[leaderBackground].title}
+                          </span>
+                        </>
+                      )}
+                    </div>
                   </div>
 
                   <button
@@ -1816,9 +2101,31 @@ export default function App() {
                     const currentReg = regions[selectedMapRegion];
                     const meta = REGION_META[selectedMapRegion];
                     const isMinersRiot = regions.miners.tension >= 80;
-                    const supplyCost = isMinersRiot ? 12 : 6;
+                    const supplyCost = leaderBackground === 'director' ? (isMinersRiot ? 6 : 3) : (isMinersRiot ? 12 : 6);
                     const voronovAlly = storyFlags.includes('voronov_ally');
-                    const curfewKgbCost = voronovAlly ? 3 : 6;
+                    let curfewKgbCost = 6;
+                    let curfewPeopleCost = 4;
+                    let curfewTurnsCount = 3;
+
+                    if (leaderBackground === 'kgb') {
+                      curfewKgbCost = voronovAlly ? 2 : 3;
+                      curfewPeopleCost = 2;
+                      curfewTurnsCount = 4;
+                    } else if (leaderBackground === 'technocrat') {
+                      curfewKgbCost = voronovAlly ? 6 : 9;
+                      curfewPeopleCost = 4;
+                      curfewTurnsCount = 3;
+                    } else {
+                      curfewKgbCost = voronovAlly ? 3 : 6;
+                      curfewPeopleCost = 4;
+                      curfewTurnsCount = 3;
+                    }
+
+                    const selfGovMoscowCost = leaderBackground === 'director' ? 9 : (leaderBackground === 'technocrat' ? 4 : 6);
+                    const selfGovSovGain = leaderBackground === 'technocrat' ? 8 : 6;
+                    const directiveCdTime = leaderBackground === 'technocrat' ? 2 : 3;
+                    const gosplanDrop = leaderBackground === 'apparatchik' ? 30 : 25;
+                    const gosplanAdd = leaderBackground === 'apparatchik' ? 15 : 18;
 
                     return (
                       <div className="w-full md:w-[42%] flex flex-col justify-between space-y-2 text-xs">
@@ -1888,7 +2195,7 @@ export default function App() {
                         <div className="border border-[#6e470b] bg-[#120c06] p-2 space-y-1.5 flex-1 flex flex-col justify-between">
                           <div className="text-[10px] font-bold text-[#ffb000] border-b border-[#3d2607] pb-1 flex justify-between">
                             <span>ОПЕРАТИВНЫЕ ДИРЕКТИВЫ АСУ:</span>
-                            <span className="text-[9px] text-[#8c5b0f]">1 РАЗ В 3 ХОДА</span>
+                            <span className="text-[9px] text-[#8c5b0f]">1 РАЗ В {directiveCdTime} ХОДА</span>
                           </div>
 
                           <div className="space-y-1.5 my-auto">
@@ -1904,7 +2211,7 @@ export default function App() {
                             >
                               <div className="font-bold">[1] ПЕРЕБРОСКА ФОНДОВ (ГОСПЛАН)</div>
                               <div className="text-[8.5px] text-[#8c5b0f]">
-                                -25% напряженности за счет спокойного сектора (+18%). Без трат шкал.
+                                -{gosplanDrop}% напряженности за счет спокойного сектора (+{gosplanAdd}%). Без трат шкал. {leaderBackground === 'apparatchik' ? '★ Бонус аппаратчика' : ''}
                               </div>
                             </button>
 
@@ -1923,45 +2230,45 @@ export default function App() {
                                 <span className="text-[9px]">-{supplyCost} ЭКОН.</span>
                               </div>
                               <div className="text-[8.5px] text-[#8c5b0f]">
-                                -30% напряженности. {isMinersRiot ? 'ВНИМАНИЕ: стоимость удвоена из-за блокады шахт!' : ''}
+                                -30% напряженности. {isMinersRiot ? 'ВНИМАНИЕ: стоимость удвоена из-за блокады шахт!' : ''} {leaderBackground === 'director' ? '★ Скидка директора (-3)' : ''}
                               </div>
                             </button>
 
                             {/* Directive 3: Curfew */}
                             <button
                               onClick={handleDirectiveCurfew}
-                              disabled={directiveCooldown > 0 || stats.kgb < curfewKgbCost || stats.people < 4}
+                              disabled={directiveCooldown > 0 || stats.kgb < curfewKgbCost || stats.people < curfewPeopleCost}
                               className={`w-full p-1.5 border text-left font-mono transition text-[10px] cursor-pointer ${
-                                directiveCooldown > 0 || stats.kgb < curfewKgbCost || stats.people < 4
+                                directiveCooldown > 0 || stats.kgb < curfewKgbCost || stats.people < curfewPeopleCost
                                   ? 'border-[#3a250a] text-[#553810] cursor-not-allowed bg-[#090603]'
                                   : 'border-[#6e470b] hover:border-[#ffb000] text-[#ffb000] bg-[#160f08] hover:bg-[#ffb000]/10'
                               }`}
                             >
                               <div className="font-bold flex justify-between">
                                 <span>[3] ОМОН И КОМЕНДАНТСКИЙ ЧАС</span>
-                                <span className="text-[9px]">-{curfewKgbCost} АРМ, -4 НАР</span>
+                                <span className="text-[9px]">-{curfewKgbCost} АРМ, -{curfewPeopleCost} НАР</span>
                               </div>
                               <div className="text-[8.5px] text-[#8c5b0f]">
-                                -35% напряженности, заморозка роста на 3 хода, +6% Автократии.
+                                -35% напряженности, режим ЧО на {curfewTurnsCount} хода, +6% Автократии. {leaderBackground === 'kgb' ? '★ ЧК-режим (4 хода)' : leaderBackground === 'technocrat' ? '▲ Саботаж генералитета (-9)' : ''}
                               </div>
                             </button>
 
                             {/* Directive 4: Self-Government */}
                             <button
                               onClick={handleDirectiveSelfGov}
-                              disabled={directiveCooldown > 0 || stats.moscow < 6}
+                              disabled={directiveCooldown > 0 || stats.moscow < selfGovMoscowCost}
                               className={`w-full p-1.5 border text-left font-mono transition text-[10px] cursor-pointer ${
-                                directiveCooldown > 0 || stats.moscow < 6
+                                directiveCooldown > 0 || stats.moscow < selfGovMoscowCost
                               ? 'border-[#3a250a] text-[#553810] cursor-not-allowed bg-[#090603]'
                               : 'border-[#6e470b] hover:border-[#ffb000] text-[#ffb000] bg-[#160f08] hover:bg-[#ffb000]/10'
                               }`}
                             >
                               <div className="font-bold flex justify-between">
                                 <span>[4] МЕСТНОЕ САМОУПРАВЛЕНИЕ</span>
-                                <span className="text-[9px]">-6 МОСКВА</span>
+                                <span className="text-[9px]">-{selfGovMoscowCost} МОСКВА</span>
                               </div>
                               <div className="text-[8.5px] text-[#8c5b0f]">
-                                -25% напряженности, +6% к Суверенитету.
+                                -25% напряженности, +{selfGovSovGain}% к Суверенитету. {leaderBackground === 'technocrat' ? '★ Кибернетика (+8%)' : leaderBackground === 'director' ? '▲ Сложность торга (-9)' : ''}
                               </div>
                             </button>
                           </div>
@@ -2392,8 +2699,7 @@ export default function App() {
                   <button
                     onClick={() => {
                       terminalAudio.playSwitchClick();
-                      initializeDeck();
-                      setScreen('game');
+                      setScreen('candidate');
                     }}
                     className="flex-1 py-2.5 border-2 border-[#ffb000] bg-[#ffb000] text-black font-extrabold text-xs md:text-sm hover:bg-[#ffb000]/80 transition cursor-pointer"
                   >

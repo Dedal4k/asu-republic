@@ -683,6 +683,90 @@ export const TerminalPortrait: React.FC<PortraitProps> = ({ archetype, isEmergen
             <path d="M 45 57 Q 50 58.5 55 57" stroke={primaryColor} strokeWidth="1" fill="none" />
           </g>
         )}
+
+        {/* 13. TECHNOCRAT-REFORMER (ТЕХНОКРАТ-РЕФОРМАТОР) */}
+        {archetype === 'technocrat' && (
+          <g>
+            {/* Cybernetic schematic background traces */}
+            <line x1="8" y1="20" x2="30" y2="20" stroke={primaryColor} strokeWidth="0.6" strokeDasharray="2 2" opacity="0.4" />
+            <line x1="30" y1="20" x2="30" y2="38" stroke={primaryColor} strokeWidth="0.6" strokeDasharray="2 2" opacity="0.4" />
+            <circle cx="30" cy="38" r="1.2" fill={primaryColor} opacity="0.5" />
+            <line x1="92" y1="24" x2="70" y2="24" stroke={primaryColor} strokeWidth="0.6" strokeDasharray="2 2" opacity="0.4" />
+            <line x1="70" y1="24" x2="70" y2="42" stroke={primaryColor} strokeWidth="0.6" strokeDasharray="2 2" opacity="0.4" />
+            <circle cx="70" cy="42" r="1.2" fill={primaryColor} opacity="0.5" />
+
+            {/* Massive Symmetric Shoulders (Y: 70..100) */}
+            <polygon
+              points="12,100 20,74 38,70 62,70 80,74 88,100"
+              fill="#110c06"
+              stroke={primaryColor}
+              strokeWidth="1.2"
+            />
+            {/* Collar & Lapels */}
+            <polygon points="38,70 50,86 42,76" fill="#181008" stroke={primaryColor} strokeWidth="0.8" />
+            <polygon points="62,70 50,86 58,76" fill="#181008" stroke={primaryColor} strokeWidth="0.8" />
+            {/* White Collar & Narrow Tie */}
+            <polygon points="45,71 50,77 55,71" fill="#fff" opacity="0.85" />
+            <polygon points="48,77 52,77 53,98 47,98" fill={primaryColor} stroke={primaryColor} strokeWidth="0.6" />
+            {/* Breast pocket with fountain pens */}
+            <line x1="26" y1="84" x2="35" y2="84" stroke={primaryColor} strokeWidth="0.8" />
+            <line x1="28" y1="80" x2="28" y2="84" stroke={primaryColor} strokeWidth="1" />
+            <line x1="31" y1="81" x2="31" y2="84" stroke={primaryColor} strokeWidth="0.9" />
+
+            {/* Neck */}
+            <path d="M 40 52 L 40 73 L 60 73 L 60 52 Z" fill="#140d07" stroke={primaryColor} strokeWidth="1" />
+            <line x1="44" y1="56" x2="45" y2="70" stroke={primaryColor} strokeWidth="0.6" opacity="0.5" />
+            <line x1="56" y1="56" x2="55" y2="70" stroke={primaryColor} strokeWidth="0.6" opacity="0.5" />
+
+            {/* Head Contour (Centered at X=50, Y=38) */}
+            <path
+              d="M 35 34 C 34 22, 66 22, 65 34 C 65 48, 62 58, 50 58 C 38 58, 35 48, 35 34 Z"
+              fill="#181109"
+              stroke={primaryColor}
+              strokeWidth="1.2"
+            />
+            {/* Ears */}
+            <path d="M 35 36 C 32 36, 32 44, 35 44" stroke={primaryColor} strokeWidth="0.9" fill="#130b05" />
+            <path d="M 65 36 C 68 36, 68 44, 65 44" stroke={primaryColor} strokeWidth="0.9" fill="#130b05" />
+
+            {/* Neat Side-Parted Intellectual Hairstyle */}
+            <path
+              d="M 34 32 C 34 16, 44 14, 52 14 C 64 14, 66 22, 66 32 C 60 21, 50 20, 42 22 C 38 23, 35 27, 34 32 Z"
+              fill={denseDither}
+              stroke={primaryColor}
+              strokeWidth="1.2"
+            />
+            <path d="M 42 22 Q 44 14 52 14" stroke={primaryColor} strokeWidth="0.8" fill="none" />
+            <path d="M 46 21 Q 48 16 54 16" stroke={primaryColor} strokeWidth="0.6" fill="none" />
+
+            {/* Eyebrows */}
+            <line x1="38" y1="33" x2="46" y2="34" stroke={primaryColor} strokeWidth="1.2" />
+            <line x1="54" y1="34" x2="62" y2="33" stroke={primaryColor} strokeWidth="1.2" />
+
+            {/* Rectangular Cybernetics Spectacles (Очки кибернетика) */}
+            <rect x="37" y="35" width="10" height="6" fill="#0d0905" stroke={primaryColor} strokeWidth="1.2" />
+            <rect x="53" y="35" width="10" height="6" fill="#0d0905" stroke={primaryColor} strokeWidth="1.2" />
+            <line x1="47" y1="37" x2="53" y2="37" stroke={primaryColor} strokeWidth="1.4" />
+            <line x1="34" y1="37" x2="37" y2="37" stroke={primaryColor} strokeWidth="0.8" />
+            <line x1="63" y1="37" x2="66" y2="37" stroke={primaryColor} strokeWidth="0.8" />
+
+            {/* Eyes behind lenses */}
+            <circle cx="42" cy="38" r="1.3" fill={primaryColor} />
+            <circle cx="58" cy="38" r="1.3" fill={primaryColor} />
+            <circle cx="42.4" cy="37.6" r="0.4" fill="#000" />
+            <circle cx="58.4" cy="37.6" r="0.4" fill="#000" />
+
+            {/* Intellectual Nose */}
+            <path d="M 50 36 L 49 46 L 47 47 L 53 47 L 51 46 Z" stroke={primaryColor} strokeWidth="1" fill="none" />
+
+            {/* Calm, Concentrated Mouth */}
+            <line x1="44" y1="52" x2="56" y2="52" stroke={primaryColor} strokeWidth="1.3" />
+            <line x1="47" y1="54" x2="53" y2="54" stroke={primaryColor} strokeWidth="0.7" />
+
+            {/* Clean Shaven Chin */}
+            <path d="M 46 56 Q 50 57 54 56" stroke={primaryColor} strokeWidth="0.8" fill="none" />
+          </g>
+        )}
       </svg>
     </div>
   );

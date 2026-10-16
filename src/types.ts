@@ -50,7 +50,22 @@ export type ArchetypeId =
   | 'crisis_radar'
   | 'crisis_deficit'
   | 'crisis_tank'
-  | 'yeltsin';
+  | 'yeltsin'
+  | 'technocrat';
+
+export type LeaderBackgroundId = 'apparatchik' | 'director' | 'kgb' | 'technocrat';
+
+export interface LeaderBackground {
+  id: LeaderBackgroundId;
+  title: string;
+  subtitle: string;
+  dossier: string;
+  initialStats: Stats;
+  initialRegions: Record<RegionId, number>;
+  perkTitle: string;
+  perkDesc: string;
+  flawDesc: string;
+}
 
 export interface Card {
   id: string;
