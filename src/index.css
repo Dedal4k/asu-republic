@@ -9,14 +9,34 @@
   }
 }
 
-/* CRT Screen Glow and Effects */
-.crt-amber-text {
-  color: #ffb000;
-  text-shadow: 0 0 4px rgba(255, 176, 0, 0.7), 0 0 10px rgba(255, 176, 0, 0.35);
+:root {
+  --term-color: #ffb000;
+  --term-glow: rgba(255, 176, 0, 0.4);
+  --term-dim: rgba(255, 176, 0, 0.15);
+  --term-bg: #0d0900;
+  --term-border: #6e470b;
+  --term-badge-bg: rgba(255, 176, 0, 0.12);
+  --term-frame: #150f08;
 }
 
-.crt-amber-dim {
-  color: #8c5b0f;
+/* CRT Screen Glow and Effects (Dynamic Phosphor Variables) */
+.crt-amber-text,
+.crt-term-text {
+  color: var(--term-color, #ffb000);
+  text-shadow: 0 0 4px var(--term-glow, rgba(255, 176, 0, 0.4)), 0 0 10px var(--term-glow, rgba(255, 176, 0, 0.2));
+}
+
+.crt-amber-dim,
+.crt-term-dim {
+  color: var(--term-border, #6e470b);
+}
+
+.crt-term-border {
+  border-color: var(--term-border, #6e470b);
+}
+
+.crt-term-bg {
+  background-color: var(--term-bg, #0d0900);
 }
 
 .crt-red-text {
@@ -31,12 +51,25 @@
 
 /* CRT Glass curved frame and scanline effects */
 .crt-screen-bezel {
-  background: radial-gradient(circle at 50% 50%, #150f08 0%, #0d0905 75%, #050302 100%);
+  background: radial-gradient(circle at 50% 50%, var(--term-frame, #150f08) 0%, var(--term-bg, #0d0905) 75%, #050302 100%);
   box-shadow: 
     inset 0 0 80px rgba(0, 0, 0, 0.95),
-    inset 0 0 25px rgba(255, 176, 0, 0.1),
+    inset 0 0 25px var(--term-glow, rgba(255, 176, 0, 0.1)),
     0 0 0 2px #22160b,
     0 10px 30px rgba(0, 0, 0, 0.9);
+}
+
+.crt-curve-frame {
+  perspective: 1000px;
+}
+
+.crt-curve-frame .crt-screen-bezel {
+  border-radius: 12px;
+  box-shadow: 
+    inset 0 0 95px rgba(0, 0, 0, 0.96),
+    inset 0 0 30px var(--term-glow, rgba(255, 176, 0, 0.15)),
+    0 0 0 3px #2b1d0e,
+    0 15px 40px rgba(0, 0, 0, 0.95);
 }
 
 .crt-scanlines {
@@ -71,6 +104,21 @@
 .crt-emergency-vignette {
   box-shadow: inset 0 0 65px rgba(255, 42, 0, 0.38), inset 0 0 20px rgba(255, 42, 0, 0.55);
   pointer-events: none;
+}
+
+/* Micro-glitches for crisis / voltage drops (pure brightness & subtle micro-jitter, strictly no page jump) */
+@keyframes voltage-glitch {
+  0% { filter: brightness(1); }
+  94% { filter: brightness(1); }
+  95% { filter: brightness(1.25); }
+  96% { filter: brightness(0.9); }
+  97% { filter: brightness(1.1); }
+  98% { filter: brightness(1); }
+  100% { filter: brightness(1); }
+}
+
+.animate-voltage-glitch {
+  animation: voltage-glitch 5s infinite ease-in-out;
 }
 
 /* CRT Turn Off beam collapse */
@@ -120,31 +168,31 @@
   animation: crt-turn-on 0.6s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
 }
 
-/* Custom Scrollbar for Archive Dossier */
+/* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0d0905;
-  border-left: 1px solid #3d2607;
+  background: var(--term-bg, #0d0905);
+  border-left: 1px solid var(--term-border, #3d2607);
 }
 ::-webkit-scrollbar-thumb {
-  background: #6e470b;
+  background: var(--term-border, #6e470b);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #ffb000;
+  background: var(--term-color, #ffb000);
 }
 
-/* Teletype TASS Ticker Tape (Smooth horizontal marquee, amber CRT glow) */
+/* Teletype TASS Ticker Tape */
 @keyframes teletype-ticker {
-  0% { transform: translateX(100%); }
-  100% { transform: translateX(-100%); }
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
 }
 
 .animate-marquee {
-  display: inline-block;
+  display: inline-flex;
   white-space: nowrap;
-  animation: teletype-ticker 36s linear infinite;
+  animation: teletype-ticker 28s linear infinite;
   will-change: transform;
 }
 

@@ -4,16 +4,21 @@
  */
 
 import React from 'react';
-import { ArchetypeId } from './types';
+import { ArchetypeId, PhosphorColor } from './types';
 
 interface PortraitProps {
   archetype: ArchetypeId;
   isEmergency?: boolean;
+  phosphorColor?: PhosphorColor;
 }
 
-export const TerminalPortrait: React.FC<PortraitProps> = ({ archetype, isEmergency }) => {
-  const primaryColor = isEmergency ? '#ff2a00' : '#ffb000';
-  const dimColor = isEmergency ? '#6e1000' : '#6e470b';
+export const TerminalPortrait: React.FC<PortraitProps> = ({ archetype, isEmergency, phosphorColor = 'amber' }) => {
+  const normalColor =
+    phosphorColor === 'green' ? '#33ff33' : phosphorColor === 'mono' ? '#e5e7eb' : '#ffb000';
+  const normalDim =
+    phosphorColor === 'green' ? '#135213' : phosphorColor === 'mono' ? '#4b5563' : '#6e470b';
+  const primaryColor = isEmergency ? '#ff2a00' : normalColor;
+  const dimColor = isEmergency ? '#6e1000' : normalDim;
   const ditherBg = isEmergency ? 'url(#dither-red)' : 'url(#dither-amber)';
   const denseDither = isEmergency ? 'url(#dense-dither-red)' : 'url(#dense-dither-amber)';
 
@@ -25,15 +30,15 @@ export const TerminalPortrait: React.FC<PortraitProps> = ({ archetype, isEmergen
         xmlns="http://www.w3.org/2000/svg"
       >
         <defs>
-          {/* Amber dithering patterns */}
+          {/* Amber/Theme dithering patterns */}
           <pattern id="dither-amber" width="2" height="2" patternUnits="userSpaceOnUse">
-            <circle cx="1" cy="1" r="0.45" fill="#ffb000" opacity="0.4" />
+            <circle cx="1" cy="1" r="0.45" fill={primaryColor} opacity="0.4" />
           </pattern>
           <pattern id="dense-dither-amber" width="2" height="2" patternUnits="userSpaceOnUse">
-            <rect x="0" y="0" width="1" height="1" fill="#ffb000" opacity="0.75" />
+            <rect x="0" y="0" width="1" height="1" fill={primaryColor} opacity="0.75" />
           </pattern>
           <pattern id="hatch-amber" width="3" height="3" patternUnits="userSpaceOnUse">
-            <line x1="0" y1="0" x2="3" y2="3" stroke="#ffb000" strokeWidth="0.6" opacity="0.45" />
+            <line x1="0" y1="0" x2="3" y2="3" stroke={primaryColor} strokeWidth="0.6" opacity="0.45" />
           </pattern>
 
           {/* Red emergency dithering patterns */}

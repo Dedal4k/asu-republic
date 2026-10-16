@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Ending, PoliticalProfile, Stats } from '../types';
+import { Ending, PoliticalProfile, Stats, RepublicEconomy } from '../types';
 
 export const ALL_ENDINGS: Ending[] = [
   // 8 Failure Endings
@@ -182,6 +182,48 @@ export function determineEnding(
       return ALL_ENDINGS.find(e => e.id === 'nomenklatura_capitalism')!;
     }
     if (profile.sovereignty <= 40 && supportedGkchp && profile.market <= 45 && stats.moscow >= 45) {
+      return ALL_ENDINGS.find(e => e.id === 'red_sanctuary')!;
+    }
+    return ALL_ENDINGS.find(e => e.id === 'wild_field')!;
+  }
+
+  return null;
+}
+
+export function determineStrategyEnding(
+  economy: RepublicEconomy,
+  stats: Stats,
+  profile: PoliticalProfile,
+  month: number,
+  supportedGkchp: boolean
+): Ending | null {
+  // 1. Катастрофический крах потребительского рынка и голод
+  if (economy.shelfSupplyPercent <= 5) return ALL_ENDINGS.find(e => e.id === 'people_zero')!;
+  
+  // 2. Срыв союзных поставок и жесткий ввод войск Москвы
+  if (economy.moscowPlanFulfilled <= 15) return ALL_ENDINGS.find(e => e.id === 'moscow_zero')!;
+  
+  // 3. Банкротство республиканской казны
+  if (economy.rubleBudgetMillions <= -200) return ALL_ENDINGS.find(e => e.id === 'economy_zero')!;
+
+  // 4. Политический путч или диктатура
+  if (stats.kgb <= 0) return ALL_ENDINGS.find(e => e.id === 'kgb_zero')!;
+  if (stats.kgb >= 100) return ALL_ENDINGS.find(e => e.id === 'kgb_max')!;
+  if (stats.moscow <= 0) return ALL_ENDINGS.find(e => e.id === 'moscow_zero')!;
+  if (stats.moscow >= 100) return ALL_ENDINGS.find(e => e.id === 'moscow_max')!;
+
+  // 5. Финал: Декабрь 1991 (Ход 36) — Исторический исход
+  if (month >= 36) {
+    if (profile.sovereignty >= 60 && !supportedGkchp && profile.autocracy <= 50 && economy.shelfSupplyPercent >= 45) {
+      return ALL_ENDINGS.find(e => e.id === 'architect_independence')!;
+    }
+    if (profile.sovereignty >= 55 && profile.autocracy >= 60 && stats.kgb >= 45) {
+      return ALL_ENDINGS.find(e => e.id === 'father_of_nation')!;
+    }
+    if (profile.market >= 60 && economy.rubleBudgetMillions >= 40) {
+      return ALL_ENDINGS.find(e => e.id === 'nomenklatura_capitalism')!;
+    }
+    if (profile.sovereignty <= 40 && supportedGkchp && profile.market <= 45 && economy.moscowPlanFulfilled >= 70) {
       return ALL_ENDINGS.find(e => e.id === 'red_sanctuary')!;
     }
     return ALL_ENDINGS.find(e => e.id === 'wild_field')!;

@@ -144,3 +144,8 @@ export function getTassHeadline(days: number): string {
     'ТАСС ПЕРЕДАЕТ: ОБСТАНОВКА В СТРАНЕ ОСТАЕТСЯ НАПРЯЖЕННОЙ. ПАРТИЙНЫЕ И СОВЕТСКИЕ ОРГАНЫ ВЕДУТ РАБОТУ ПО СТАБИЛИЗАЦИИ.'
   );
 }
+
+export function getTassHeadlineForMonth(month: number): string {
+  const approxDays = Math.min(756, Math.max(0, Math.round((month - 1) * (750 / 35))));
+  return getTassHeadline(approxDays);
+}
