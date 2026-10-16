@@ -22,16 +22,21 @@ export const GAME_CARDS: Card[] = [
       stats: { moscow: -6, people: 9, economy: -8, kgb: 5 },
       profile: { market: 8, autocracy: -6 },
       decreeBadge: 'РЕЗЕРВ-ТАБАК',
-      effectNote: 'Толпа успокоилась, но резервы исчерпаны'
+      effectNote: 'Толпа успокоилась, но резервы исчерпаны',
+      tensionDelta: -16
     },
     rightChoice: {
       label: 'ВЫСТАВИТЬ МИЛИЦИЮ',
       stats: { moscow: 6, people: -9, economy: 5, kgb: 8 },
       profile: { autocracy: 10 },
-      effectNote: 'Проспект разблокирован силой, растет злоба'
+      effectNote: 'Проспект разблокирован силой, растет злоба',
+      tensionDelta: 16
     },
     daysElapsed: 20,
-    isCrisis: true
+    isCrisis: true,
+    unique: true,
+    minTurn: 1,
+    maxTurn: 10
   },
   {
     id: 'act1_miner_strike',
@@ -46,17 +51,22 @@ export const GAME_CARDS: Card[] = [
       stats: { moscow: -7, people: 8, economy: -6, kgb: -4 },
       profile: { sovereignty: 10, autocracy: -8 },
       decreeBadge: 'ЛЬГОТЫ-ШАХТА',
-      effectNote: 'Коваль жмет руку, забой работает, Москва шлет выговор'
+      effectNote: 'Коваль жмет руку, забой работает, Москва шлет выговор',
+      tensionDelta: -14
     },
     rightChoice: {
       label: 'ОБЪЯВИТЬ САБОТАЖЕМ',
       stats: { moscow: 7, people: -9, economy: 5, kgb: 8 },
       profile: { autocracy: 12 },
-      effectNote: 'Коваль уходит в подполье, растет ненависть к ЦК'
+      effectNote: 'Коваль уходит в подполье, растет ненависть к ЦК',
+      tensionDelta: 18
     },
     setFlagsOnLeft: ['koval_ally'],
     setFlagsOnRight: ['koval_enemy'],
-    daysElapsed: 22
+    daysElapsed: 22,
+    unique: true,
+    minTurn: 1,
+    maxTurn: 10
   },
   {
     id: 'act1_voronov_secret_channel',
@@ -70,17 +80,22 @@ export const GAME_CARDS: Card[] = [
       label: 'ОПЕРЕТЬСЯ НА ВОРОНОВА',
       stats: { kgb: 7, moscow: -6, people: -4, economy: 4 },
       profile: { autocracy: 8 },
-      effectNote: 'Воронов становится вашим доверенным офицером'
+      effectNote: 'Воронов становится вашим доверенным офицером',
+      tensionDelta: -6
     },
     rightChoice: {
       label: 'НЕ ДОВЕРЯТЬ ЧЕКИСТУ',
       stats: { kgb: -7, people: 6, moscow: 5, economy: 0 },
       profile: { autocracy: -6 },
-      effectNote: 'Вы осадили полковника. Воронов берет вас в разработку'
+      effectNote: 'Вы осадили полковника. Воронов берет вас в разработку',
+      tensionDelta: 8
     },
     setFlagsOnLeft: ['voronov_ally'],
     setFlagsOnRight: ['voronov_enemy'],
-    daysElapsed: 20
+    daysElapsed: 20,
+    unique: true,
+    minTurn: 1,
+    maxTurn: 10
   },
   {
     id: 'act1_samizdat_newspaper',
@@ -94,18 +109,23 @@ export const GAME_CARDS: Card[] = [
       label: 'АРЕСТОВАТЬ МИРСКОГО',
       stats: { moscow: 6, people: -8, kgb: 8, economy: 0 },
       profile: { autocracy: 12 },
-      effectNote: 'Мирский в СИЗО, площадь бурлит и скандирует его имя'
+      effectNote: 'Мирский в СИЗО, площадь бурлит и скандирует его имя',
+      tensionDelta: 16
     },
     rightChoice: {
       label: 'РАЗРЕШИТЬ ПЕЧАТЬ',
       stats: { moscow: -7, people: 8, kgb: -7, economy: 4 },
       profile: { autocracy: -10, sovereignty: 6 },
       decreeBadge: 'СВОБОДА-ПЕЧАТИ',
-      effectNote: 'Мирский благодарит ЦК, гласность расширяется'
+      effectNote: 'Мирский благодарит ЦК, гласность расширяется',
+      tensionDelta: -12
     },
     setFlagsOnLeft: ['mirsky_arrested'],
     setFlagsOnRight: ['mirsky_freed'],
-    daysElapsed: 22
+    daysElapsed: 22,
+    unique: true,
+    minTurn: 1,
+    maxTurn: 10
   },
   {
     id: 'act1_eco_rally',
@@ -120,15 +140,20 @@ export const GAME_CARDS: Card[] = [
       stats: { moscow: -5, people: 8, economy: -8, kgb: -4 },
       profile: { sovereignty: 6, market: -6 },
       decreeBadge: 'ЭКО-КОНТРОЛЬ',
-      effectNote: 'Горожане ликуют, план союзного Минхимпрома сорван'
+      effectNote: 'Горожане ликуют, план союзного Минхимпрома сорван',
+      tensionDelta: -14
     },
     rightChoice: {
       label: 'ПРОДОЛЖИТЬ ВЫПУСК',
       stats: { moscow: 6, people: -7, economy: 8, kgb: 4 },
       profile: { autocracy: 6 },
-      effectNote: 'Экологи угрожают палаточным городком протеста'
+      effectNote: 'Экологи угрожают палаточным городком протеста',
+      tensionDelta: 14
     },
-    daysElapsed: 20
+    daysElapsed: 20,
+    unique: true,
+    minTurn: 2,
+    maxTurn: 10
   },
   {
     id: 'act1_article_six',
@@ -142,16 +167,21 @@ export const GAME_CARDS: Card[] = [
       label: 'ПОДЧИНИТЬСЯ МОСКВЕ',
       stats: { moscow: 8, people: -8, kgb: 5, economy: 0 },
       profile: { sovereignty: -10, autocracy: 10 },
-      effectNote: 'Москва довольна, на площади скандируют «Долой КПСС!»'
+      effectNote: 'Москва довольна, на площади скандируют «Долой КПСС!»',
+      tensionDelta: 12
     },
     rightChoice: {
       label: 'ДОПУСТИТЬ ПЛЮРАЛИЗМ',
       stats: { moscow: -9, people: 9, kgb: -6, economy: 0 },
       profile: { sovereignty: 12, autocracy: -12 },
       decreeBadge: 'ОТМЕНА-СТ6',
-      effectNote: 'Исторический шаг: компартия теряет монополию'
+      effectNote: 'Исторический шаг: компартия теряет монополию',
+      tensionDelta: -14
     },
-    daysElapsed: 24
+    daysElapsed: 24,
+    unique: true,
+    minTurn: 3,
+    maxTurn: 11
   },
   {
     id: 'act1_sugar_coupons',
@@ -166,16 +196,21 @@ export const GAME_CARDS: Card[] = [
       stats: { moscow: 4, people: -5, economy: 7, kgb: 4 },
       profile: { market: -10 },
       decreeBadge: 'ТАЛОНЫ-89',
-      effectNote: 'Установлен жесткий учет, но в магазинах серый быт'
+      effectNote: 'Установлен жесткий учет, но в магазинах серый быт',
+      tensionDelta: -6
     },
     rightChoice: {
       label: 'ОТПУСТИТЬ ЦЕНЫ В КООПЕРАТИВАХ',
       stats: { moscow: -5, people: -6, economy: 8, kgb: -4 },
       profile: { market: 14 },
       decreeBadge: 'КООП-ТОРГ',
-      effectNote: 'Товары появились по тройным ценам, люди ропщут'
+      effectNote: 'Товары появились по тройным ценам, люди ропщут',
+      tensionDelta: 8
     },
-    daysElapsed: 22
+    daysElapsed: 22,
+    unique: true,
+    minTurn: 2,
+    maxTurn: 11
   },
   {
     id: 'act1_video_salon',
@@ -190,15 +225,20 @@ export const GAME_CARDS: Card[] = [
       stats: { moscow: -5, people: 6, economy: 8, kgb: -5 },
       profile: { market: 14, autocracy: -5 },
       decreeBadge: 'ЛЬГОТЫ-КООП',
-      effectNote: 'Расцвет малого бизнеса, комсомольцы открывают кафе'
+      effectNote: 'Расцвет малого бизнеса, комсомольцы открывают кафе',
+      tensionDelta: -10
     },
     rightChoice: {
       label: 'УСИЛИТЬ РЕЙДЫ ОБХСС',
       stats: { moscow: 5, people: -6, economy: -7, kgb: 7 },
       profile: { market: -10, autocracy: 8 },
-      effectNote: 'Цеховики уходят в глубокое подполье'
+      effectNote: 'Цеховики уходят в глубокое подполье',
+      tensionDelta: 10
     },
-    daysElapsed: 22
+    daysElapsed: 22,
+    unique: true,
+    minTurn: 2,
+    maxTurn: 12
   },
 
   // ==========================================================
@@ -216,18 +256,23 @@ export const GAME_CARDS: Card[] = [
       label: 'ПРИНЯТЬ ЭШЕЛОНЫ УГЛЯ',
       stats: { economy: 7, people: 6, moscow: -6, kgb: 0 },
       profile: { sovereignty: 12 },
-      effectNote: 'Коваль спас заводы от остановки, Москва шлет ноту'
+      effectNote: 'Коваль спас заводы от остановки, Москва шлет ноту',
+      tensionDelta: -16
     },
     rightChoice: {
       label: 'ОТКЛОНИТЬ (ЖДАТЬ МОСКВУ)',
       stats: { moscow: 6, economy: -7, people: -5, kgb: 4 },
       profile: { sovereignty: -8 },
-      effectNote: 'Шахтеры разочарованы вашей нерешительностью'
+      effectNote: 'Шахтеры разочарованы вашей нерешительностью',
+      tensionDelta: 12
     },
-    requiredFlags: ['koval_ally'],
-    bannedFlags: ['koval_enemy'],
+    requiresFlags: ['koval_ally'],
+    forbiddenFlags: ['koval_enemy'],
     setFlagsOnLeft: ['koval_solidarity'],
-    daysElapsed: 22
+    daysElapsed: 22,
+    unique: true,
+    minTurn: 8,
+    maxTurn: 18
   },
   {
     id: 'act2_koval_blockade',
@@ -241,19 +286,24 @@ export const GAME_CARDS: Card[] = [
       label: 'ПОЙТИ НА ПЕРЕГОВОРЫ',
       stats: { economy: -6, people: 6, moscow: -6, kgb: -4 },
       profile: { autocracy: -8, sovereignty: 6 },
-      effectNote: 'Стачка приостановлена, Коваль добился уступок'
+      effectNote: 'Стачка приостановлена, Коваль добился уступок',
+      tensionDelta: -12
     },
     rightChoice: {
       label: 'ВВЕСТИ ОМОН И РАЗОГНАТЬ',
       stats: { kgb: 8, people: -9, economy: -7, moscow: 6 },
       profile: { autocracy: 14 },
-      effectNote: 'Столкновения на путях, шахтеры уходят в радикалы'
+      effectNote: 'Столкновения на путях, шахтеры уходят в радикалы',
+      tensionDelta: 20
     },
-    requiredFlags: ['koval_enemy'],
-    bannedFlags: ['koval_ally'],
+    requiresFlags: ['koval_enemy'],
+    forbiddenFlags: ['koval_ally'],
     setFlagsOnLeft: ['koval_truce'],
     setFlagsOnRight: ['koval_radicalized'],
-    daysElapsed: 22
+    daysElapsed: 22,
+    unique: true,
+    minTurn: 8,
+    maxTurn: 18
   },
   {
     id: 'act2_voronov_moscow_leak',
@@ -267,18 +317,23 @@ export const GAME_CARDS: Card[] = [
       label: 'ПЕРЕХВАТИТЬ МАТЕРИАЛЫ',
       stats: { kgb: 7, moscow: -7, economy: 5, people: 4 },
       profile: { autocracy: 8, sovereignty: 8 },
-      effectNote: 'Компромат уничтожен, Воронов доказал преданность'
+      effectNote: 'Компромат уничтожен, Воронов доказал преданность',
+      tensionDelta: -10
     },
     rightChoice: {
       label: 'НЕ ВМЕШИВАТЬСЯ В РЕВИЗИЮ',
       stats: { moscow: 6, kgb: -6, people: -5, economy: -4 },
       profile: { sovereignty: -8 },
-      effectNote: 'Ревизоры копают под вас, Воронов удивлен слабостью'
+      effectNote: 'Ревизоры копают под вас, Воронов удивлен слабостью',
+      tensionDelta: 10
     },
-    requiredFlags: ['voronov_ally'],
-    bannedFlags: ['voronov_enemy'],
+    requiresFlags: ['voronov_ally'],
+    forbiddenFlags: ['voronov_enemy'],
     setFlagsOnLeft: ['voronov_shield'],
-    daysElapsed: 20
+    daysElapsed: 20,
+    unique: true,
+    minTurn: 8,
+    maxTurn: 18
   },
   {
     id: 'act2_voronov_wiretap',
@@ -292,19 +347,24 @@ export const GAME_CARDS: Card[] = [
       label: 'ПУБЛИЧНО УВОЛИТЬ ВОРОНОВА',
       stats: { people: 7, kgb: -8, moscow: -6, economy: 0 },
       profile: { autocracy: -8, sovereignty: 10 },
-      effectNote: 'Воронов с позором изгнан, но готовит месть'
+      effectNote: 'Воронов с позором изгнан, но готовит месть',
+      tensionDelta: -8
     },
     rightChoice: {
       label: 'ЗАПУСТИТЬ ДЕЗИНФОРМАЦИЮ',
       stats: { kgb: 6, moscow: -4, economy: 4, people: -5 },
       profile: { autocracy: 8 },
-      effectNote: 'Вы водите чекистов за нос, но заговор зреет'
+      effectNote: 'Вы водите чекистов за нос, но заговор зреет',
+      tensionDelta: 8
     },
-    requiredFlags: ['voronov_enemy'],
-    bannedFlags: ['voronov_ally'],
+    requiresFlags: ['voronov_enemy'],
+    forbiddenFlags: ['voronov_ally'],
     setFlagsOnLeft: ['voronov_disgraced'],
     setFlagsOnRight: ['voronov_plot'],
-    daysElapsed: 20
+    daysElapsed: 20,
+    unique: true,
+    minTurn: 8,
+    maxTurn: 18
   },
   {
     id: 'act2_mirsky_press_support',
@@ -318,18 +378,23 @@ export const GAME_CARDS: Card[] = [
       label: 'ОТСТОЯТЬ ТИПОГРАФИЮ МИРСКОГО',
       stats: { people: 8, moscow: -8, economy: 4, kgb: -5 },
       profile: { sovereignty: 14, autocracy: -6 },
-      effectNote: 'Мирский мобилизует прессу в вашу защиту'
+      effectNote: 'Мирский мобилизует прессу в вашу защиту',
+      tensionDelta: -14
     },
     rightChoice: {
       label: 'ПРИОСТАНОВИТЬ СПЕЦВЫПУСК',
       stats: { moscow: 7, people: -7, economy: -4, kgb: 5 },
       profile: { sovereignty: -8 },
-      effectNote: 'Пресса обвиняет руководство ЦК в трусости'
+      effectNote: 'Пресса обвиняет руководство ЦК в трусости',
+      tensionDelta: 12
     },
-    requiredFlags: ['mirsky_freed'],
-    bannedFlags: ['mirsky_arrested'],
+    requiresFlags: ['mirsky_freed'],
+    forbiddenFlags: ['mirsky_arrested'],
     setFlagsOnLeft: ['mirsky_voice_of_republic'],
-    daysElapsed: 22
+    daysElapsed: 22,
+    unique: true,
+    minTurn: 8,
+    maxTurn: 18
   },
   {
     id: 'act2_mirsky_hunger_strike',
@@ -343,19 +408,24 @@ export const GAME_CARDS: Card[] = [
       label: 'ПОМИЛОВАТЬ И ВЫПУСТИТЬ',
       stats: { people: 8, kgb: -7, moscow: -5, economy: 0 },
       profile: { autocracy: -10, sovereignty: 6 },
-      effectNote: 'Мирский выходит кумиром толпы, КГБ недоволен'
+      effectNote: 'Мирский выходит кумиром толпы, КГБ недоволен',
+      tensionDelta: -16
     },
     rightChoice: {
       label: 'ОСТАВИТЬ ПОД СТРАЖЕЙ',
       stats: { kgb: 8, people: -9, moscow: 5, economy: -4 },
       profile: { autocracy: 12 },
-      effectNote: 'Мирский становится мучеником, площадь кипит'
+      effectNote: 'Мирский становится мучеником, площадь кипит',
+      tensionDelta: 18
     },
-    requiredFlags: ['mirsky_arrested'],
-    bannedFlags: ['mirsky_freed'],
+    requiresFlags: ['mirsky_arrested'],
+    forbiddenFlags: ['mirsky_freed'],
     setFlagsOnLeft: ['mirsky_released_martyr'],
     setFlagsOnRight: ['mirsky_martyr'],
-    daysElapsed: 22
+    daysElapsed: 22,
+    unique: true,
+    minTurn: 8,
+    maxTurn: 18
   },
   {
     id: 'act2_state_language',
@@ -370,15 +440,20 @@ export const GAME_CARDS: Card[] = [
       stats: { moscow: -8, people: 9, economy: -5, kgb: -5 },
       profile: { sovereignty: 16, autocracy: -5 },
       decreeBadge: 'ГОС-ЯЗЫК',
-      effectNote: 'Население торжествует, союзные заводы волнуются'
+      effectNote: 'Население торжествует, союзные заводы волнуются',
+      tensionDelta: -12
     },
     rightChoice: {
       label: 'ОСТАВИТЬ ДВУЯЗЫЧИЕ',
       stats: { moscow: 8, people: -8, economy: 5, kgb: 4 },
       profile: { sovereignty: -12 },
-      effectNote: 'Народный фронт обвиняет ЦК в предательстве'
+      effectNote: 'Народный фронт обвиняет ЦК в предательстве',
+      tensionDelta: 14
     },
-    daysElapsed: 22
+    daysElapsed: 22,
+    unique: true,
+    minTurn: 10,
+    maxTurn: 20
   },
   {
     id: 'act2_declaration_sovereignty',
@@ -393,16 +468,21 @@ export const GAME_CARDS: Card[] = [
       stats: { moscow: -10, people: 10, economy: 5, kgb: -6 },
       profile: { sovereignty: 22, autocracy: -5 },
       decreeBadge: 'СУВЕРЕНИТЕТ',
-      effectNote: 'Митинг победы! Кремль шлет грозную ноту протеста'
+      effectNote: 'Митинг победы! Кремль шлет грозную ноту протеста',
+      tensionDelta: -16
     },
     rightChoice: {
       label: 'ВЕТИРОВАТЬ ДЕКЛАРАЦИЮ',
       stats: { moscow: 9, people: -10, economy: -4, kgb: 6 },
       profile: { sovereignty: -18, autocracy: 10 },
-      effectNote: 'Штурм кордонов, депутаты объявляют недоверие ЦК'
+      effectNote: 'Штурм кордонов, депутаты объявляют недоверие ЦК',
+      tensionDelta: 20
     },
     daysElapsed: 28,
-    isCrisis: true
+    isCrisis: true,
+    unique: true,
+    minTurn: 12,
+    maxTurn: 22
   },
 
   // ==========================================================
@@ -421,17 +501,22 @@ export const GAME_CARDS: Card[] = [
       stats: { kgb: 8, people: 8, moscow: -8, economy: 0 },
       profile: { sovereignty: 16, autocracy: 8 },
       decreeBadge: 'ЩИТ-РЕСПУБЛИКИ',
-      effectNote: 'Воронов взял периметр, спецназ Москвы отступает'
+      effectNote: 'Воронов взял периметр, спецназ Москвы отступает',
+      tensionDelta: -14
     },
     rightChoice: {
       label: 'СОБЛЮДАТЬ НЕЙТРАЛИТЕТ',
       stats: { moscow: 6, people: -6, kgb: -5, economy: 4 },
       profile: { autocracy: 5 },
-      effectNote: 'Воронов разочарован вашей нерешительностью'
+      effectNote: 'Воронов разочарован вашей нерешительностью',
+      tensionDelta: 8
     },
-    requiredFlags: ['voronov_ally'],
+    requiresFlags: ['voronov_ally'],
     setFlagsOnLeft: ['voronov_loyal_guard'],
-    daysElapsed: 20
+    daysElapsed: 20,
+    unique: true,
+    minTurn: 16,
+    maxTurn: 25
   },
   {
     id: 'act3_referendum_1991',
@@ -446,15 +531,20 @@ export const GAME_CARDS: Card[] = [
       stats: { moscow: -8, people: 9, kgb: -6, economy: 0 },
       profile: { sovereignty: 20, autocracy: -6 },
       decreeBadge: 'РЕФЕРЕНДУМ-91',
-      effectNote: '92% граждан поддержали независимость республики'
+      effectNote: '92% граждан поддержали независимость республики',
+      tensionDelta: -14
     },
     rightChoice: {
       label: 'ПРОВЕСТИ ТОЛЬКО СОЮЗНЫЙ',
       stats: { moscow: 8, people: -8, kgb: 6, economy: 0 },
       profile: { sovereignty: -16, autocracy: 8 },
-      effectNote: 'Оппозиция бойкотирует голосование, Москва хвалит'
+      effectNote: 'Оппозиция бойкотирует голосование, Москва хвалит',
+      tensionDelta: 12
     },
-    daysElapsed: 24
+    daysElapsed: 24,
+    unique: true,
+    minTurn: 17,
+    maxTurn: 26
   },
   {
     id: 'act3_pavlov_reform',
@@ -469,16 +559,21 @@ export const GAME_CARDS: Card[] = [
       stats: { moscow: -8, people: 9, economy: -6, kgb: -5 },
       profile: { sovereignty: 14, autocracy: -5 },
       decreeBadge: 'ЗАЩИТА-ВКЛАДОВ',
-      effectNote: 'Люди спасли сбережения, Минфин СССР грозит судом'
+      effectNote: 'Люди спасли сбережения, Минфин СССР грозит судом',
+      tensionDelta: -14
     },
     rightChoice: {
       label: 'ИСПОЛНИТЬ ПРИКАЗ ПАВЛОВА',
       stats: { moscow: 7, people: -10, economy: 6, kgb: 5 },
       profile: { sovereignty: -10, autocracy: 8 },
-      effectNote: 'Деньги сгорели, старики плачут у закрытых касс'
+      effectNote: 'Деньги сгорели, старики плачут у закрытых касс',
+      tensionDelta: 18
     },
     daysElapsed: 20,
-    isCrisis: true
+    isCrisis: true,
+    unique: true,
+    minTurn: 18,
+    maxTurn: 27
   },
   {
     id: 'act3_gkchp_day1_morning',
@@ -493,18 +588,23 @@ export const GAME_CARDS: Card[] = [
       stats: { moscow: 10, people: -10, kgb: 9, economy: -5 },
       profile: { autocracy: 22, sovereignty: -20 },
       decreeBadge: 'РЕЖИМ-ГКЧП',
-      effectNote: 'Вы поддержали путчистов! Города замерли в шоке'
+      effectNote: 'Вы поддержали путчистов! Города замерли в шоке',
+      tensionDelta: 22
     },
     rightChoice: {
       label: 'ОТКАЗАТЬСЯ ВВОДИТЬ ЧП',
       stats: { moscow: -10, people: 10, kgb: -9, economy: 4 },
       profile: { sovereignty: 22, autocracy: -16 },
       decreeBadge: 'ОТПОР-ГКЧП',
-      effectNote: 'Вы открыто бросили вызов хунте! Народ на улицах'
+      effectNote: 'Вы открыто бросили вызов хунте! Народ на улицах',
+      tensionDelta: -16
     },
     daysElapsed: 12,
     isCrisis: true,
-    isGkchp: true
+    isGkchp: true,
+    unique: true,
+    minTurn: 20,
+    maxTurn: 30
   },
   {
     id: 'act3_gkchp_day1_afternoon',
@@ -518,17 +618,22 @@ export const GAME_CARDS: Card[] = [
       label: 'ПРИКАЗАТЬ ТАНКАМ УЙТИ',
       stats: { moscow: -9, people: 10, kgb: -8, economy: 0 },
       profile: { sovereignty: 20, autocracy: -18 },
-      effectNote: 'Танки развернулись! Площадь ликует'
+      effectNote: 'Танки развернулись! Площадь ликует',
+      tensionDelta: -18
     },
     rightChoice: {
       label: 'РАЗОГНАТЬ МИТИНГ БРОНЕЙ',
       stats: { moscow: 9, people: -11, kgb: 9, economy: -6 },
       profile: { autocracy: 24, sovereignty: -18 },
-      effectNote: 'Трагедия на баррикадах. Народ не простит крови'
+      effectNote: 'Трагедия на баррикадах. Народ не простит крови',
+      tensionDelta: 24
     },
     daysElapsed: 12,
     isCrisis: true,
-    isGkchp: true
+    isGkchp: true,
+    unique: true,
+    minTurn: 20,
+    maxTurn: 30
   },
   {
     id: 'act3_gkchp_day2_yeltsin',
@@ -543,17 +648,22 @@ export const GAME_CARDS: Card[] = [
       stats: { moscow: -8, people: 9, kgb: -6, economy: -4 },
       profile: { sovereignty: 18, autocracy: -14 },
       decreeBadge: 'СОЮЗ-С-ЕЛЬЦИНЫМ',
-      effectNote: 'Единый фронт сопротивления путчу сформирован'
+      effectNote: 'Единый фронт сопротивления путчу сформирован',
+      tensionDelta: -16
     },
     rightChoice: {
       label: 'ВЫЖИДАТЬ В НЕЙТРАЛИТЕТЕ',
       stats: { moscow: 5, people: -7, kgb: 5, economy: 4 },
       profile: { autocracy: 8 },
-      effectNote: 'Ваша осторожность выглядит трусостью для всех'
+      effectNote: 'Ваша осторожность выглядит трусостью для всех',
+      tensionDelta: 10
     },
     daysElapsed: 12,
     isCrisis: true,
-    isGkchp: true
+    isGkchp: true,
+    unique: true,
+    minTurn: 20,
+    maxTurn: 30
   },
   {
     id: 'act3_gkchp_day3_collapse',
@@ -568,17 +678,22 @@ export const GAME_CARDS: Card[] = [
       stats: { moscow: -9, people: 10, kgb: -8, economy: 5 },
       profile: { sovereignty: 22, autocracy: -16 },
       decreeBadge: 'РОСПУСК-КПСС',
-      effectNote: 'Конец эпохи: партийные архивы опечатаны'
+      effectNote: 'Конец эпохи: партийные архивы опечатаны',
+      tensionDelta: -18
     },
     rightChoice: {
       label: 'ЗАЩИТИТЬ АППАРАТ ЦК',
       stats: { moscow: 8, people: -10, kgb: 6, economy: -5 },
       profile: { autocracy: 16, sovereignty: -12 },
-      effectNote: 'Толпа швыряет камни, осада здания продолжается'
+      effectNote: 'Толпа швыряет камни, осада здания продолжается',
+      tensionDelta: 22
     },
     daysElapsed: 14,
     isCrisis: true,
-    isGkchp: true
+    isGkchp: true,
+    unique: true,
+    minTurn: 20,
+    maxTurn: 30
   },
 
   // ==========================================================
@@ -597,17 +712,21 @@ export const GAME_CARDS: Card[] = [
       stats: { economy: 8, people: 8, moscow: -7, kgb: 0 },
       profile: { sovereignty: 14 },
       decreeBadge: 'ШАХТЕР-СПАС',
-      effectNote: 'Города согреты, Коваль выступает на митинге за вас'
+      effectNote: 'Города согреты, Коваль выступает на митинге за вас',
+      tensionDelta: -16
     },
     rightChoice: {
       label: 'ОПЛАТИТЬ ИМПОРТ ВАЛЮТОЙ',
       stats: { economy: -8, people: 5, moscow: 6, kgb: 0 },
       profile: { market: 10 },
-      effectNote: 'Казна истощена, но тепло в домах сохранено'
+      effectNote: 'Казна истощена, но тепло в домах сохранено',
+      tensionDelta: -6
     },
-    requiredFlags: ['koval_ally'],
-    bannedFlags: ['koval_radicalized', 'koval_enemy'],
-    daysElapsed: 22
+    requiresFlags: ['koval_ally'],
+    forbiddenFlags: ['koval_radicalized', 'koval_enemy'],
+    daysElapsed: 22,
+    unique: true,
+    minTurn: 24
   },
   {
     id: 'act4_koval_general_strike',
@@ -621,17 +740,21 @@ export const GAME_CARDS: Card[] = [
       label: 'УСТУПИТЬ И СДАТЬ ШАХТЫ',
       stats: { economy: -7, people: 7, kgb: -7, moscow: -5 },
       profile: { autocracy: -12, sovereignty: 8 },
-      effectNote: 'Магистраль открыта ценой сдачи контроля стачкому'
+      effectNote: 'Магистраль открыта ценой сдачи контроля стачкому',
+      tensionDelta: -14
     },
     rightChoice: {
       label: 'ШТУРМ СПЕЦНАЗОМ НА ПУТЯХ',
       stats: { kgb: 8, people: -9, economy: -8, moscow: 6 },
       profile: { autocracy: 16 },
-      effectNote: 'Кровавая стычка на рельсах, шахтеры объявляют войну'
+      effectNote: 'Кровавая стычка на рельсах, шахтеры объявляют войну',
+      tensionDelta: 24
     },
-    requiredFlags: ['koval_enemy'],
+    requiresFlags: ['koval_enemy'],
     daysElapsed: 22,
-    isCrisis: true
+    isCrisis: true,
+    unique: true,
+    minTurn: 24
   },
   {
     id: 'act4_voronov_siloviki_plot',
@@ -645,18 +768,22 @@ export const GAME_CARDS: Card[] = [
       label: 'ПОДНЯТЬ МИЛИЦИЮ И НАРОД',
       stats: { people: 9, kgb: -9, economy: -4, moscow: -6 },
       profile: { sovereignty: 14, autocracy: -16 },
-      effectNote: 'Толпа окружила телецентр, заговорщики капитулируют'
+      effectNote: 'Толпа окружила телецентр, заговорщики капитулируют',
+      tensionDelta: -18
     },
     rightChoice: {
       label: 'ПРИНЯТЬ УЛЬТИМАТУМ СИЛОВИКОВ',
       stats: { kgb: 9, people: -10, moscow: 7, economy: -6 },
       profile: { autocracy: 22, sovereignty: -14 },
       decreeBadge: 'РЕЖИМ-ХУНТЫ',
-      effectNote: 'Власть перешла чекистам, Первый секретарь отстранен'
+      effectNote: 'Власть перешла чекистам, Первый секретарь отстранен',
+      tensionDelta: 20
     },
-    requiredFlags: ['voronov_enemy'],
+    requiresFlags: ['voronov_enemy'],
     daysElapsed: 20,
-    isCrisis: true
+    isCrisis: true,
+    unique: true,
+    minTurn: 24
   },
   {
     id: 'act4_mirsky_international_forum',
@@ -671,17 +798,21 @@ export const GAME_CARDS: Card[] = [
       stats: { people: 8, economy: 7, moscow: -7, kgb: -5 },
       profile: { sovereignty: 20, market: 12 },
       decreeBadge: 'ГОЛОС-ЖЕНЕВЫ',
-      effectNote: 'Западные СМИ транслируют выступления Мирского'
+      effectNote: 'Западные СМИ транслируют выступления Мирского',
+      tensionDelta: -14
     },
     rightChoice: {
       label: 'ЗАПРЕТИТЬ ВЫЕЗД ЗА РУБЕЖ',
       stats: { moscow: 6, people: -7, kgb: 6, economy: -4 },
       profile: { autocracy: 10 },
-      effectNote: 'Запад обвиняет республику в цензуре и авторитаризме'
+      effectNote: 'Запад обвиняет республику в цензуре и авторитаризме',
+      tensionDelta: 12
     },
-    requiredFlags: ['mirsky_freed'],
-    bannedFlags: ['mirsky_arrested', 'mirsky_martyr'],
-    daysElapsed: 20
+    requiresFlags: ['mirsky_freed'],
+    forbiddenFlags: ['mirsky_arrested', 'mirsky_martyr'],
+    daysElapsed: 20,
+    unique: true,
+    minTurn: 24
   },
   {
     id: 'act4_mirsky_radical_revolt',
@@ -695,17 +826,21 @@ export const GAME_CARDS: Card[] = [
       label: 'ВЫЙТИ С ПОКАЯНИЕМ К ТОЛПЕ',
       stats: { people: 8, economy: -5, kgb: -7, moscow: -5 },
       profile: { autocracy: -18, sovereignty: 10 },
-      effectNote: 'Толпа отменила штурм, но авторитет ЦК сломлен'
+      effectNote: 'Толпа отменила штурм, но авторитет ЦК сломлен',
+      tensionDelta: -16
     },
     rightChoice: {
       label: 'ПРИМЕНИТЬ ДУБИНКИ И ГАЗ',
       stats: { economy: -6, people: -10, kgb: 8, moscow: 6 },
       profile: { autocracy: 20 },
-      effectNote: 'Баррикады в огне, столица погружается в хаос боев'
+      effectNote: 'Баррикады в огне, столица погружается в хаос боев',
+      tensionDelta: 22
     },
-    requiredFlags: ['mirsky_arrested'],
+    requiresFlags: ['mirsky_arrested'],
     daysElapsed: 22,
-    isCrisis: true
+    isCrisis: true,
+    unique: true,
+    minTurn: 24
   },
   {
     id: 'act4_nationalize_property',
@@ -720,15 +855,19 @@ export const GAME_CARDS: Card[] = [
       stats: { moscow: -9, people: 8, economy: 9, kgb: 5 },
       profile: { sovereignty: 22, market: -6 },
       decreeBadge: 'ГОССОБСТВЕННОСТЬ',
-      effectNote: 'Промышленные гиганты перешли под контроль республики'
+      effectNote: 'Промышленные гиганты перешли под контроль республики',
+      tensionDelta: -12
     },
     rightChoice: {
       label: 'СОХРАНИТЬ СТАТУС-КВО',
       stats: { moscow: 7, people: -6, economy: -8, kgb: -4 },
       profile: { sovereignty: -14 },
-      effectNote: 'Директора растаскивают оборудование за границу'
+      effectNote: 'Директора растаскивают оборудование за границу',
+      tensionDelta: 12
     },
-    daysElapsed: 22
+    daysElapsed: 22,
+    unique: true,
+    minTurn: 25
   },
   {
     id: 'act4_republican_coupons',
@@ -743,15 +882,19 @@ export const GAME_CARDS: Card[] = [
       stats: { moscow: -9, people: 6, economy: 8, kgb: 4 },
       profile: { sovereignty: 22, market: 10 },
       decreeBadge: 'ВАЛЮТА-КУПОН',
-      effectNote: 'Республика отгородилась от инфляционного цунами'
+      effectNote: 'Республика отгородилась от инфляционного цунами',
+      tensionDelta: -10
     },
     rightChoice: {
       label: 'ОСТАТЬСЯ В РУБЛЕВОЙ ЗОНЕ',
       stats: { moscow: 8, people: -7, economy: -9, kgb: -4 },
       profile: { sovereignty: -16 },
-      effectNote: 'Обесцененные рубли хлынули со всех республик'
+      effectNote: 'Обесцененные рубли хлынули со всех республик',
+      tensionDelta: 14
     },
-    daysElapsed: 24
+    daysElapsed: 24,
+    unique: true,
+    minTurn: 25
   },
   {
     id: 'act4_belovezha_finale',
@@ -766,16 +909,213 @@ export const GAME_CARDS: Card[] = [
       stats: { moscow: -10, people: 9, economy: 6, kgb: 5 },
       profile: { sovereignty: 26, autocracy: 0 },
       decreeBadge: 'АКТ-СНГ-1991',
-      effectNote: 'СССР ушел в историю. Наша республика суверенна!'
+      effectNote: 'СССР ушел в историю. Наша республика суверенна!',
+      tensionDelta: -16
     },
     rightChoice: {
       label: 'ОТКАЗАТЬСЯ (ЗА СОЮЗ ССР)',
       stats: { moscow: 9, people: -10, economy: -8, kgb: -5 },
       profile: { sovereignty: -26, autocracy: 10 },
       decreeBadge: 'ВЕРНОСТЬ-СССР',
-      effectNote: 'Вы остаетесь последним советским руководителем в пустоте'
+      effectNote: 'Вы остаетесь последним советским руководителем в пустоте',
+      tensionDelta: 18
     },
     daysElapsed: 25,
-    isCrisis: true
+    isCrisis: true,
+    unique: true,
+    minTurn: 27
+  },
+
+  // ==========================================================
+  // ЭКСКЛЮЗИВНЫЕ СПЕЦДОНЕСЕНИЯ УКГБ («КРАСНЫЕ ПАПКИ КГБ»)
+  // ВЫПАДАЮТ КАЖДЫЕ 6-7 ХОДОВ ИЛИ ПРИ НАПРЯЖЕННОСТИ СЕКТОРА >= 70%
+  // ==========================================================
+  {
+    id: 'kgb_special_koval_tapes',
+    act: 2,
+    actTitle: 'ОСОБАЯ ПАПКА УКГБ // ТОЛЬКО ЛИЧНО',
+    senderTitle: 'УКГБ ПО ОБЛАСТИ: ОСОБАЯ ПАПКА',
+    archetype: 'kgb_general',
+    region: 'miners',
+    text: 'СПЕЦДОНЕСЕНИЕ №14-ОП: ОПЕРАТИВНАЯ АУДИОЗАПИСЬ. В САУНЕ ШАХТОУПРАВЛЕНИЯ ЛИДЕР СТАЧКОМА КОВАЛЬ ВЕЛ ТАЙНЫЕ ПЕРЕГОВОРЫ С ЭМИССАРОМ ШВЕЙЦАРСКОГО ТРЕЙДЕРА О ВАЛЮТНОМ БАРТЕРЕ АНТРАЦИТА. ПЛЕНКИ МОГУТ ПОЛНОСТЬЮ ДИСКРЕДИТИРОВАТЬ СТАЧКОМ.',
+    leftChoice: {
+      label: 'ПУСТИТЬ КОМПРОМАТ В ХОД',
+      stats: { people: -5, kgb: 6, moscow: 4, economy: 0 },
+      tensionDelta: -20,
+      decreeBadge: 'АРХИВ-КОВАЛЬ',
+      effectNote: 'Авторитет забастовщиков подорван, стачка в бассейне свернута'
+    },
+    rightChoice: {
+      label: 'УБРАТЬ В СЕЙФ ДЛЯ ШАНТАЖА',
+      stats: { economy: 6, moscow: -4, kgb: 5, people: 0 },
+      resetDirectiveCooldown: true,
+      effectNote: 'Коваль вынужден тайно содействовать АСУ, директивы разблокированы'
+    },
+    daysElapsed: 15,
+    isSpecialReport: true,
+    unique: true,
+    minTurn: 6
+  },
+  {
+    id: 'kgb_special_shadow_syndicate',
+    act: 1,
+    actTitle: 'ОСОБАЯ ПАПКА УКГБ // ТОЛЬКО ЛИЧНО',
+    senderTitle: '7-Й ОТДЕЛ УКГБ: ОСОБАЯ ПАПКА',
+    archetype: 'kgb_general',
+    region: 'capital',
+    text: 'СПЕЦДОНЕСЕНИЕ №08-ОП: ВСКРЫТА СЕТЬ ТЕНЕВОГО СИНДИКАТА. ДИРЕКТОРА ЦЕНТРАЛЬНЫХ УНИВЕРМАГОВ СТОЛИЦЫ ПРЯЧУТ ДЕФИЦИТ НА ТАЙНЫХ БАЗАХ ЗА ГОРОДОМ ДЛЯ СПЕКУЛЯЦИИ В КООПЕРАТИВАХ. ВОЗМУЩЕННЫЕ ОЧЕРЕДИ ГОТОВЫ ГРОМИТЬ МАГАЗИНЫ.',
+    leftChoice: {
+      label: 'ОБЛАВА И КОНФИСКАЦИЯ',
+      stats: { people: 7, economy: -5, kgb: 6, moscow: 4 },
+      tensionDelta: -20,
+      decreeBadge: 'ОБХСС-РЕЙД',
+      effectNote: 'Товары выброшены на прилавки по госцене, столица ликует'
+    },
+    rightChoice: {
+      label: 'ОБЛОЖИТЬ ДАНЬЮ ДЛЯ АСУ',
+      stats: { economy: 8, people: -4, kgb: 4, moscow: 0 },
+      resetDirectiveCooldown: true,
+      effectNote: 'Синдикат финансирует фонды республики, директивы АСУ готовы к пуску'
+    },
+    daysElapsed: 15,
+    isSpecialReport: true,
+    unique: true,
+    minTurn: 5
+  },
+  {
+    id: 'kgb_special_garrison_plot',
+    act: 2,
+    actTitle: 'ОСОБАЯ ПАПКА УКГБ // ТОЛЬКО ЛИЧНО',
+    senderTitle: 'ВОЕННАЯ КОНТРРАЗВЕДКА КГБ: ОСОБАЯ ПАПКА',
+    archetype: 'kgb_general',
+    region: 'autonomy',
+    text: 'СПЕЦДОНЕСЕНИЕ №21-ОП: В ПОГРАНИЧНОЙ АВТОНОМИИ ПЕРЕХВАЧЕН СВЯЗНОЙ. РАДИКАЛЫ ПРЕДЛОЖИЛИ КОМАНДИРУ АРТИЛЛЕРИЙСКОГО ПОЛКА ЗОЛОТО ЗА ПЕРЕДАЧУ СКЛАДОВ БОЕПРИПАСОВ ДЛЯ "НАЦИОНАЛЬНОЙ ГВАРДИИ". СИТУАЦИЯ НА ГРАНИ ВОССТАНИЯ.',
+    leftChoice: {
+      label: 'АРЕСТОВАТЬ ЗАЧИНЩИКОВ',
+      stats: { moscow: 6, people: -6, kgb: 7, economy: 0 },
+      tensionDelta: -20,
+      decreeBadge: 'СМЕРШ-КОНТРОЛЬ',
+      effectNote: 'Чекисты обезглавили заговор в автономии, мятеж предотвращен'
+    },
+    rightChoice: {
+      label: 'СКЛОНИТЬ ГЕНЕРАЛА К СОЮЗУ',
+      stats: { kgb: 7, moscow: -5, people: 4, economy: 0 },
+      profile: { sovereignty: 6 },
+      resetDirectiveCooldown: true,
+      effectNote: 'Гарнизон присягнул республиканскому штабу АСУ, директивы сброшены'
+    },
+    daysElapsed: 15,
+    isSpecialReport: true,
+    unique: true,
+    minTurn: 7
+  },
+  {
+    id: 'kgb_special_agrarian_hoard',
+    act: 1,
+    actTitle: 'ОСОБАЯ ПАПКА УКГБ // ТОЛЬКО ЛИЧНО',
+    senderTitle: 'ЭКОНОМИЧЕСКАЯ БЕЗОПАСНОСТЬ КГБ',
+    archetype: 'kgb_general',
+    region: 'agrarian',
+    text: 'СПЕЦДОНЕСЕНИЕ №33-ОП: РУКОВОДСТВО АГРОПРОМА ТАЙНО ЗАКОНСЕРВИРОВАЛО 12 ЭЛЕВАТОРОВ С ЭЛИТНЫМ ЗЕРНОМ И САХАРОМ, ОЖИДАЯ ВЗЛЕТА ЦЕН В РАМКАХ РЫНОЧНЫХ РЕФОРМ. СЕЛА ГОЛОДАЮТ, ВСПЫХИВАЮТ ПОДЖОГИ КОЛХОЗНЫХ КОНТОР.',
+    leftChoice: {
+      label: 'РЕКВИЗИРОВАТЬ ЭЛЕВАТОРЫ',
+      stats: { people: 8, moscow: -5, economy: 4, kgb: 4 },
+      tensionDelta: -20,
+      decreeBadge: 'ПРОД-ФОНД',
+      effectNote: 'Мука и сахар поступили в пекарни, напряженность в селах спала'
+    },
+    rightChoice: {
+      label: 'МАНЕВР РЕЗЕРВАМИ В АСУ',
+      stats: { economy: 8, people: -4, moscow: 4, kgb: 0 },
+      resetDirectiveCooldown: true,
+      effectNote: 'Зерно обменено на импортное оборудование, оперативные директивы готовы'
+    },
+    daysElapsed: 15,
+    isSpecialReport: true,
+    unique: true,
+    minTurn: 6
+  },
+  {
+    id: 'kgb_special_western_leak',
+    act: 2,
+    actTitle: 'ОСОБАЯ ПАПКА УКГБ // ТОЛЬКО ЛИЧНО',
+    senderTitle: '1-Й ОТДЕЛ УКГБ (ВНЕШНЯЯ РАЗВЕДКА)',
+    archetype: 'kgb_general',
+    region: 'capital',
+    text: 'СПЕЦДОНЕСЕНИЕ №42-ОП: ПЕРЕХВАЧЕН ДИПЛОМАТИЧЕСКИЙ КУРЬЕР КОНСУЛЬСТВА США. В ДЕПЕШЕ — СПИСОК ГРАНТОПОЛУЧАТЕЛЕЙ СРЕДИ СТУДЕНЧЕСКИХ ЛИДЕРОВ И СХЕМА ПРОВОКАЦИЙ НА ПЛОЩАДИ ПЕРЕД ВЕРХОВНЫМ СОВЕТОМ.',
+    leftChoice: {
+      label: 'ОБНАРОДОВАТЬ В «ПРАВДЕ»',
+      stats: { moscow: 6, people: -6, kgb: 7, economy: 0 },
+      profile: { autocracy: 8, sovereignty: -6 },
+      tensionDelta: -20,
+      decreeBadge: 'ПРЕСС-РАЗОБЛАЧЕНИЕ',
+      effectNote: 'Студенческий митинг деморализован, иностранные кураторы бежали'
+    },
+    rightChoice: {
+      label: 'ТАЙНЫЙ ТОРГ С ДИПЛОМАТАМИ',
+      stats: { economy: 7, moscow: -6, people: 5, kgb: 0 },
+      profile: { sovereignty: 8 },
+      resetDirectiveCooldown: true,
+      effectNote: 'Консул согласился на кредитную линию для АСУ, директивы сброшены'
+    },
+    daysElapsed: 15,
+    isSpecialReport: true,
+    unique: true,
+    minTurn: 8
+  },
+  {
+    id: 'kgb_special_arms_cache',
+    act: 3,
+    actTitle: 'ОСОБАЯ ПАПКА УКГБ // ТОЛЬКО ЛИЧНО',
+    senderTitle: 'СПЕЦОТДЕЛ «АЛЬФА» УКГБ: ОСОБАЯ ПАПКА',
+    archetype: 'kgb_general',
+    region: 'autonomy',
+    text: 'СПЕЦДОНЕСЕНИЕ №55-ОП: В ЗАБРОШЕННОЙ ШАХТЕ НА ГРАНИЦЕ АВТОНОМИИ ОБНАРУЖЕН ТАЙНЫЙ АРСЕНАЛ: 600 АВТОМАТОВ АК-74, ГРАНАТОМЕТЫ И ВЗРЫВЧАТКА. БОЕВИКИ ГОТОВЯТ ВООРУЖЕННЫЙ ЗАХВАТ УВД.',
+    leftChoice: {
+      label: 'ШТУРМ И ЛИКВИДАЦИЯ',
+      stats: { kgb: 8, people: -5, moscow: 5, economy: 0 },
+      tensionDelta: -20,
+      decreeBadge: 'ЩИТ-АЛЬФА',
+      effectNote: 'Группа «Альфа» ликвидировала схрон, граница под полным контролем'
+    },
+    rightChoice: {
+      label: 'ПЕРЕВООРУЖИТЬ АППАРАТ АСУ',
+      stats: { kgb: 8, moscow: -6, economy: 4, people: 0 },
+      profile: { autocracy: 8 },
+      resetDirectiveCooldown: true,
+      effectNote: 'Спецрота охраны правительства вооружена до зубов, директивы готовы'
+    },
+    daysElapsed: 15,
+    isSpecialReport: true,
+    unique: true,
+    minTurn: 10
+  },
+  {
+    id: 'kgb_special_pavlov_intercept',
+    act: 3,
+    actTitle: 'ОСОБАЯ ПАПКА УКГБ // ТОЛЬКО ЛИЧНО',
+    senderTitle: 'ПРАВИТЕЛЬСТВЕННЫЙ ШИФРООТДЕЛ КГБ',
+    archetype: 'kgb_general',
+    region: 'miners',
+    text: 'СПЕЦДОНЕСЕНИЕ №67-ОП: СЕКРЕТНЫЙ ПРОЕКТ ПОСТАНОВЛЕНИЯ СМ СССР. ГОСПЛАН ПЛАНИРУЕТ ЗАМОРОЗИТЬ ВСЕ ВАЛЮТНЫЕ И БЕЗНАЛИЧНЫЕ СЧЕТА ПРЕДПРИЯТИЙ ТЯЖЕЛОЙ ИНДУСТРИИ РЕСПУБЛИКИ С ПОНЕДЕЛЬНИКА!',
+    leftChoice: {
+      label: 'ПРЕДУПРЕДИТЬ ДИРЕКТОРАТ',
+      stats: { people: 6, economy: 7, moscow: -8, kgb: 0 },
+      profile: { sovereignty: 12 },
+      tensionDelta: -20,
+      decreeBadge: 'СПАСЕНИЕ-СЧЕТОВ',
+      effectNote: 'Заводы успели перевести средства в спецфонд, шахты спокойны'
+    },
+    rightChoice: {
+      label: 'ВЫКУПИТЬ ОБЛИГАЦИИ В КАЗНУ',
+      stats: { economy: 9, moscow: -6, people: -4, kgb: 4 },
+      profile: { market: 10 },
+      resetDirectiveCooldown: true,
+      effectNote: 'Республиканская казна утроила золотовалютный резерв, директивы разблокированы'
+    },
+    daysElapsed: 15,
+    isSpecialReport: true,
+    unique: true,
+    minTurn: 12
   }
 ];

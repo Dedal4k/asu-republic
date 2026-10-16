@@ -36,6 +36,7 @@ export interface ChoiceImpact {
   decreeBadge?: string;
   effectNote?: string;
   tensionDelta?: number; // Shift to region tension (-14% to +16%)
+  resetDirectiveCooldown?: boolean; // Immediately resets operational directives cooldown to 0
 }
 
 export type ArchetypeId =
@@ -80,8 +81,14 @@ export interface Card {
   daysElapsed: number; // 10 to 25
   isCrisis?: boolean;
   isGkchp?: boolean;
+  isSpecialReport?: boolean;
+  unique?: boolean;
+  minTurn?: number;
+  maxTurn?: number;
   requiredFlags?: string[];
   bannedFlags?: string[];
+  requiresFlags?: string[];
+  forbiddenFlags?: string[];
   setFlagsOnLeft?: string[];
   setFlagsOnRight?: string[];
 }

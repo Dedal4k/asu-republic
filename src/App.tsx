@@ -177,6 +177,12 @@ export default function App() {
   // Narrative Memory: Story Flags across the playthrough
   const [storyFlags, setStoryFlags] = useState<string[]>([]);
 
+  // Played Card IDs for unique repeat protection
+  const [playedCardIds, setPlayedCardIds] = useState<string[]>([]);
+
+  // KGB Special Report interval counter (fires every 6-7 turns or when tension >= 70%)
+  const [turnsSinceSpecialReport, setTurnsSinceSpecialReport] = useState<number>(0);
+
   // Tactical Regions Architecture & Operational Directives
   const [regions, setRegions] = useState<Record<RegionId, RegionState>>(() => {
     const bgKey = leaderBackground || 'apparatchik';
@@ -290,26 +296,48 @@ export default function App() {
     return choice.stats;
   }, [currentCard, dragX]);
 
-  // Check if a card is eligible under current story flags
-  const isCardEligible = useCallback((card: Card, activeFlags: string[]): boolean => {
-    if (card.requiredFlags && card.requiredFlags.length > 0) {
-      const hasAllRequired = card.requiredFlags.every((f) => activeFlags.includes(f));
-      if (!hasAllRequired) return false;
-    }
-    if (card.bannedFlags && card.bannedFlags.length > 0) {
-      const hasBanned = card.bannedFlags.some((f) => activeFlags.includes(f));
-      if (hasBanned) return false;
-    }
-    return true;
-  }, []);
+  // Check if a card is eligible under current story flags, turn bounds, and uniqueness
+  const isCardEligible = useCallback(
+    (
+      card: Card,
+      activeFlags: string[],
+      currentTurns: number,
+      currentPlayedIds: string[]
+    ): boolean => {
+      // Unique cards cannot be played more than once
+      if (card.unique && currentPlayedIds.includes(card.id)) return false;
+
+      // Turn constraints
+      if (card.minTurn !== undefined && currentTurns < card.minTurn) return false;
+      if (card.maxTurn !== undefined && currentTurns > card.maxTurn) return false;
+
+      // Required flags
+      const required = card.requiresFlags || card.requiredFlags || [];
+      if (required.length > 0) {
+        const hasAllRequired = required.every((f) => activeFlags.includes(f));
+        if (!hasAllRequired) return false;
+      }
+
+      // Forbidden flags
+      const banned = card.forbiddenFlags || card.bannedFlags || [];
+      if (banned.length > 0) {
+        const hasBanned = banned.some((f) => activeFlags.includes(f));
+        if (hasBanned) return false;
+      }
+
+      return true;
+    },
+    []
+  );
 
   // Helper to reorder deck applying crisis spacing and flag filtering
   const buildInitialDeck = useCallback((): Card[] => {
-    const act1 = GAME_CARDS.filter((c) => c.act === 1);
-    const act2 = GAME_CARDS.filter((c) => c.act === 2);
-    const act3NonGkchp = GAME_CARDS.filter((c) => c.act === 3 && !c.isGkchp);
+    const act1 = GAME_CARDS.filter((c) => c.act === 1 && !c.isSpecialReport);
+    const act2 = GAME_CARDS.filter((c) => c.act === 2 && !c.isSpecialReport);
+    const act3NonGkchp = GAME_CARDS.filter((c) => c.act === 3 && !c.isGkchp && !c.isSpecialReport);
     const act3Gkchp = GAME_CARDS.filter((c) => c.act === 3 && c.isGkchp);
-    const act4 = GAME_CARDS.filter((c) => c.act === 4);
+    const act4 = GAME_CARDS.filter((c) => c.act === 4 && !c.isSpecialReport);
+    const specials = GAME_CARDS.filter((c) => c.isSpecialReport);
 
     const shuffle = <T,>(arr: T[]): T[] => [...arr].sort(() => Math.random() - 0.5);
 
@@ -319,6 +347,7 @@ export default function App() {
       ...shuffle(act3NonGkchp),
       ...act3Gkchp,
       ...shuffle(act4),
+      ...shuffle(specials),
     ];
   }, []);
 
@@ -341,6 +370,8 @@ export default function App() {
     setSupportedGkchp(false);
     setHotlineUsedInAct({ 1: false, 2: false, 3: false, 4: false });
     setStoryFlags([]);
+    setPlayedCardIds([]);
+    setTurnsSinceSpecialReport(0);
     setShelveRemaining(bgId === 'apparatchik' ? 4 : 2);
     setTurnsSinceCrisis(4);
     setCurrentEnding(null);
@@ -449,6 +480,25 @@ export default function App() {
           }
         }
         setStoryFlags(newFlags);
+
+        // Played Cards tracking: ensure unique cards cannot repeat
+        const updatedPlayedIds = playedCardIds.includes(currentCard.id)
+          ? playedCardIds
+          : [...playedCardIds, currentCard.id];
+        setPlayedCardIds(updatedPlayedIds);
+
+        // Update KGB Special Report counter
+        const nextSpecialReportCount = currentCard.isSpecialReport ? 0 : turnsSinceSpecialReport + 1;
+        setTurnsSinceSpecialReport(nextSpecialReportCount);
+
+        // Reset operational directive cooldown if specified on choice impact
+        if (choice.resetDirectiveCooldown) {
+          setDirectiveCooldown(0);
+          terminalAudio.playTriumphChime();
+          setTriumphActive(true);
+          setTriumphText('ДИРЕКТИВЫ АСУ ГОТОВЫ К ПУСКУ');
+          setTimeout(() => setTriumphActive(false), 2200);
+        }
 
         // Update crisis cooldown counter
         const nextCalmCount = currentCard.isCrisis ? 0 : turnsSinceCrisis + 1;
@@ -608,31 +658,77 @@ export default function App() {
         if (ending) {
           triggerEnding(ending);
         } else {
-          // Advance to the next card that satisfies story flags and crisis cooldown
+          // Check if KGB Special Report should trigger (every 6-7 turns OR any sector tension >= 70%)
+          const shouldTriggerSpecial =
+            nextSpecialReportCount >= 6 ||
+            Object.values(updatedRegions).some((r) => r.tension >= 70);
+
           let targetIdx = currentCardIndex + 1;
-          let found = false;
+          let foundIdx = -1;
 
-          for (let i = targetIdx; i < cardDeck.length; i++) {
-            const candidate = cardDeck[i];
-            if (!isCardEligible(candidate, newFlags)) continue;
-            if (candidate.isCrisis && !candidate.isGkchp && nextCalmCount < 4) continue;
+          // 1. If special report triggered, prioritize eligible unplayed KGB Special Report
+          if (shouldTriggerSpecial) {
+            for (let i = targetIdx; i < cardDeck.length; i++) {
+              const candidate = cardDeck[i];
+              if (
+                candidate.isSpecialReport &&
+                isCardEligible(candidate, newFlags, nextTurnsCount, updatedPlayedIds)
+              ) {
+                foundIdx = i;
+                break;
+              }
+            }
+            if (foundIdx === -1) {
+              for (let i = 0; i < targetIdx; i++) {
+                const candidate = cardDeck[i];
+                if (
+                  candidate.isSpecialReport &&
+                  isCardEligible(candidate, newFlags, nextTurnsCount, updatedPlayedIds)
+                ) {
+                  foundIdx = i;
+                  break;
+                }
+              }
+            }
+          }
 
-            // Found eligible card: swap to front of queue if not already there
-            if (i !== targetIdx) {
+          // 2. Regular queue search: skip special reports unless triggered
+          if (foundIdx === -1) {
+            for (let i = targetIdx; i < cardDeck.length; i++) {
+              const candidate = cardDeck[i];
+              if (candidate.isSpecialReport) continue;
+              if (!isCardEligible(candidate, newFlags, nextTurnsCount, updatedPlayedIds)) continue;
+              if (candidate.isCrisis && !candidate.isGkchp && nextCalmCount < 4) continue;
+
+              foundIdx = i;
+              break;
+            }
+          }
+
+          // 3. Fallback search earlier in deck if end reached
+          if (foundIdx === -1) {
+            for (let i = 0; i < targetIdx; i++) {
+              const candidate = cardDeck[i];
+              if (candidate.isSpecialReport) continue;
+              if (!isCardEligible(candidate, newFlags, nextTurnsCount, updatedPlayedIds)) continue;
+              if (candidate.isCrisis && !candidate.isGkchp && nextCalmCount < 4) continue;
+
+              foundIdx = i;
+              break;
+            }
+          }
+
+          if (foundIdx !== -1) {
+            if (foundIdx !== targetIdx) {
               setCardDeck((prev) => {
                 const copy = [...prev];
-                const [targetCard] = copy.splice(i, 1);
+                const [targetCard] = copy.splice(foundIdx, 1);
                 copy.splice(targetIdx, 0, targetCard);
                 return copy;
               });
             }
             setCurrentCardIndex(targetIdx);
-            found = true;
-            break;
-          }
-
-          if (!found) {
-            // If end of current queue reached, cycle safely
+          } else {
             setCurrentCardIndex((prev) => (prev + 1 < cardDeck.length ? prev + 1 : 0));
           }
         }
@@ -654,6 +750,8 @@ export default function App() {
       decrees,
       supportedGkchp,
       storyFlags,
+      playedCardIds,
+      turnsSinceSpecialReport,
       turnsSinceCrisis,
       isEmergency,
       cardDeck,
@@ -685,7 +783,8 @@ export default function App() {
 
       for (let i = currentCardIndex; i < copy.length; i++) {
         const candidate = copy[i];
-        if (!isCardEligible(candidate, storyFlags)) continue;
+        if (candidate.isSpecialReport) continue;
+        if (!isCardEligible(candidate, storyFlags, turnsPlayed, playedCardIds)) continue;
         if (candidate.isCrisis && !candidate.isGkchp && turnsSinceCrisis < 4) continue;
 
         if (i !== currentCardIndex) {
@@ -707,6 +806,8 @@ export default function App() {
     tassBulletin,
     isCardEligible,
     storyFlags,
+    playedCardIds,
+    turnsPlayed,
     turnsSinceCrisis,
   ]);
 
@@ -955,6 +1056,8 @@ export default function App() {
     setDaysSurvived(0);
     setDecrees([]);
     setStoryFlags([]);
+    setPlayedCardIds([]);
+    setTurnsSinceSpecialReport(0);
     setRegions({
       capital: { ...INITIAL_REGIONS.capital, tension: bg.initialRegions.capital },
       miners: { ...INITIAL_REGIONS.miners, tension: bg.initialRegions.miners },
@@ -1047,10 +1150,10 @@ export default function App() {
   };
 
   return (
-    <div className="relative w-screen h-screen bg-[#050302] flex items-center justify-center p-0 md:p-3 overflow-hidden select-none">
+    <div className="relative w-full h-[100dvh] max-h-[100dvh] bg-[#050302] flex items-center justify-center p-0 md:p-3 overflow-hidden select-none">
       {/* Outer Industrial Vintage CRT Cabinet / Bezel */}
       <div
-        className={`relative w-full h-full max-w-[540px] max-h-[960px] flex flex-col crt-screen-bezel rounded-none md:rounded-3xl border-4 md:border-8 border-[#1f150c] overflow-hidden ${
+        className={`relative w-full h-full max-w-[540px] max-h-[100dvh] md:max-h-[960px] flex flex-col crt-screen-bezel rounded-none md:rounded-3xl border-2 sm:border-4 md:border-8 border-[#1f150c] overflow-hidden ${
           crtCurve ? 'shadow-[0_0_50px_rgba(0,0,0,0.95)]' : ''
         }`}
       >
@@ -1061,24 +1164,24 @@ export default function App() {
         <div className="hidden md:block absolute bottom-2 right-2 text-[#4a341b] text-xs font-mono select-none">⊕</div>
 
         {/* Top Edge Telemetry bar */}
-        <header className="relative z-20 flex items-center justify-between px-3 md:px-5 py-2 border-b border-[#3d2607] text-[10px] md:text-xs font-mono tracking-wider crt-amber-dim bg-[#0a0704]/80">
-          <div className="flex items-center space-x-2">
+        <header className="relative z-20 shrink-0 flex items-center justify-between px-2 sm:px-3 md:px-5 py-1.5 sm:py-2 border-b border-[#3d2607] text-[10px] md:text-xs font-mono tracking-wider crt-amber-dim bg-[#0a0704]/80">
+          <div className="flex items-center space-x-1.5 sm:space-x-2">
             <span className={isEmergency ? 'text-[#ff2a00] font-bold' : 'text-[#ffb000]'}>
               {isEmergency ? 'СЕКТОР-ЧП' : 'СЕКТОР-01'}
             </span>
             <span className="opacity-40">|</span>
-            <span>СВЯЗЬ: УСТАНОВЛЕНА</span>
+            <span>СВЯЗЬ: ОК</span>
             {leaderBackground && (
               <>
                 <span className="opacity-40 hidden sm:inline">|</span>
-                <span className="text-[#ffb000] font-bold hidden sm:inline truncate max-w-[200px]" title={LEADER_BACKGROUNDS[leaderBackground].title}>
-                  [КАДРЫ: {LEADER_BACKGROUNDS[leaderBackground].title}]
+                <span className="text-[#ffb000] font-bold hidden sm:inline truncate max-w-[170px]" title={LEADER_BACKGROUNDS[leaderBackground].title}>
+                  [{LEADER_BACKGROUNDS[leaderBackground].title}]
                 </span>
               </>
             )}
           </div>
-          <div className="flex items-center space-x-3">
-            <span>ПАМЯТЬ: 98%</span>
+          <div className="flex items-center space-x-2 sm:space-x-3">
+            <span className="hidden sm:inline">ОЗУ: 98%</span>
             <button
               onClick={handleToggleSound}
               className="px-1.5 py-0.5 border border-[#6e470b] hover:border-[#ffb000] text-[#ffb000] text-[9px] md:text-[10px] transition cursor-pointer active:bg-[#ffb000] active:text-black"
@@ -1091,7 +1194,7 @@ export default function App() {
 
         {/* CRT Screen Main Active Area (strictly NO shake animations) */}
         <main
-          className={`relative z-10 flex-1 flex flex-col p-3 md:p-4 overflow-hidden ${
+          className={`relative z-10 flex-1 min-h-0 flex flex-col p-2 sm:p-3 md:p-4 overflow-hidden ${
             menuFlicker ? 'opacity-70' : ''
           } ${beamCollapse ? 'animate-crt-off' : ''}`}
         >
@@ -1422,23 +1525,23 @@ export default function App() {
           {/* SCREEN: MAIN GAMEPLAY TERMINAL                            */}
           {/* ========================================================= */}
           {screen === 'game' && currentCard && (
-            <div className="flex-1 flex flex-col justify-between overflow-hidden">
+            <div className="flex-1 min-h-0 flex flex-col justify-between overflow-hidden">
               {/* Emergency Banner Alert if applicable (no shake) */}
               {isEmergency && (
-                <div className="w-full py-0.5 px-2 mb-1 border border-[#ff2a00] bg-[#ff2a00]/15 text-[#ff2a00] text-[9px] md:text-[10px] font-bold text-center tracking-widest">
+                <div className="w-full shrink-0 py-0.5 px-2 mb-1 border border-[#ff2a00] bg-[#ff2a00]/15 text-[#ff2a00] text-[8.5px] sm:text-[9.5px] font-bold text-center tracking-widest">
                   ⚠ ВНИМАНИЕ: УГРОЗА ПОТЕРИ УПРАВЛЕНИЯ РЕСПУБЛИКОЙ ⚠
                 </div>
               )}
 
               {/* Triumph stabilization alert */}
               {triumphActive && (
-                <div className="w-full py-1 px-2 mb-1 border border-[#33ff33] bg-[#33ff33]/20 text-[#33ff33] text-xs font-bold text-center tracking-widest">
+                <div className="w-full shrink-0 py-0.5 sm:py-1 px-2 mb-1 border border-[#33ff33] bg-[#33ff33]/20 text-[#33ff33] text-[9.5px] sm:text-xs font-bold text-center tracking-widest">
                   ★ {triumphText} ★
                 </div>
               )}
 
               {/* TOP 4 INDICATORS (0-100) WITH 10 LIGHT SEGMENTS & TRIANGLE IMPACT MARKERS */}
-              <div className="grid grid-cols-4 gap-1 md:gap-2 mb-1.5">
+              <div className="shrink-0 grid grid-cols-4 gap-1 md:gap-2 mb-1">
                 {(['moscow', 'people', 'kgb', 'economy'] as StatKey[]).map((key) => {
                   const val = stats[key];
                   const filledSegments = Math.round(val / 10);
@@ -1448,10 +1551,10 @@ export default function App() {
                   return (
                     <div key={key} className="flex flex-col items-center">
                       {/* Triangle Warning Marker above bar */}
-                      <div className="h-3 flex items-center justify-center">
+                      <div className="h-2.5 sm:h-3 flex items-center justify-center">
                         {impactVal !== undefined && impactVal !== 0 && (
                           <span
-                            className={`text-[9px] font-bold ${
+                            className={`text-[8.5px] sm:text-[9px] font-bold ${
                               impactVal > 0 ? 'text-[#33ff33]' : 'text-[#ff2a00]'
                             }`}
                           >
@@ -1462,7 +1565,7 @@ export default function App() {
 
                       {/* 10-Segment Bar: Only the MOST critical stat is highlighted in red */}
                       <div
-                        className={`w-full flex space-x-[1px] md:space-x-[2px] p-[2px] border transition-colors ${
+                        className={`w-full flex space-x-[1px] md:space-x-[2px] p-[1.5px] border transition-colors ${
                           isCrit
                             ? 'border-[#ff2a00] bg-[#ff2a00]/15 shadow-[0_0_6px_rgba(255,42,0,0.6)]'
                             : 'border-[#6e470b] bg-[#0c0804]'
@@ -1473,7 +1576,7 @@ export default function App() {
                           return (
                             <div
                               key={segIdx}
-                              className={`h-2 md:h-3 flex-1 transition-all ${
+                              className={`h-1.5 sm:h-2 md:h-2.5 flex-1 transition-all ${
                                 isLit
                                   ? isCrit
                                     ? 'bg-[#ff2a00] shadow-[0_0_3px_#ff2a00]'
@@ -1487,7 +1590,7 @@ export default function App() {
 
                       {/* Stat Label strictly in Russian */}
                       <span
-                        className={`text-[9px] md:text-[10px] font-bold tracking-wider mt-0.5 truncate ${
+                        className={`text-[8.5px] sm:text-[9px] md:text-[10px] font-bold tracking-wider mt-0.5 truncate ${
                           isCrit ? 'text-[#ff2a00]' : 'crt-amber-text'
                         }`}
                       >
@@ -1499,12 +1602,12 @@ export default function App() {
               </div>
 
               {/* TACTICAL CONTROL BAR (Date/Act | [ПОД СУКНО] | [СВОДКА] | [КАРТА] | [ВЧ-СВЯЗЬ]) */}
-              <div className="flex items-center justify-between px-2 py-1 mb-1 border border-[#6e470b] bg-[#110b06] text-[10px] md:text-xs font-mono">
+              <div className="shrink-0 flex items-center justify-between px-1.5 sm:px-2 py-0.5 sm:py-1 mb-1 border border-[#6e470b] bg-[#110b06] text-[8.5px] sm:text-[9px] md:text-xs font-mono">
                 {/* Left: Date & Act */}
                 <div className="truncate max-w-[28%] text-[#ffb000]">
                   <span className="font-bold">{currentDateFormatted}</span>
-                  <span className="opacity-40 mx-1">|</span>
-                  <span className="text-[9px] text-[#8c5b0f]">
+                  <span className="opacity-40 mx-1 hidden sm:inline">|</span>
+                  <span className="text-[8.5px] sm:text-[9px] text-[#8c5b0f] hidden sm:inline">
                     {currentCard.actTitle.split(':')[0]}
                   </span>
                 </div>
@@ -1514,7 +1617,7 @@ export default function App() {
                   <button
                     onClick={handleShelveCard}
                     disabled={shelveRemaining <= 0 || !!cardAnimating || regions.capital.tension >= 80}
-                    className={`px-1.5 py-0.5 border text-[9px] font-bold transition cursor-pointer ${
+                    className={`px-1 sm:px-1.5 py-0.5 border text-[8.5px] sm:text-[9px] font-bold transition cursor-pointer ${
                       regions.capital.tension >= 80
                         ? 'border-[#ff2a00] text-[#ff2a00] bg-[#ff2a00]/15 cursor-not-allowed'
                         : shelveRemaining > 0
@@ -1527,7 +1630,7 @@ export default function App() {
                         : 'Отложить карточку без изменения шкал (2 раза за Акт)'
                     }
                   >
-                    {regions.capital.tension >= 80 ? '[ОСАДА: БЛОК]' : `[ПОД СУКНО: ${shelveRemaining}]`}
+                    {regions.capital.tension >= 80 ? '[ОСАДА]' : `[СУКНО: ${shelveRemaining}]`}
                   </button>
 
                   <button
@@ -1535,7 +1638,7 @@ export default function App() {
                       terminalAudio.playSwitchClick();
                       setShowSummaryModal(true);
                     }}
-                    className="px-1.5 py-0.5 border border-[#ffb000] text-[#ffb000] hover:bg-[#ffb000] hover:text-black text-[9px] font-bold transition cursor-pointer"
+                    className="px-1 sm:px-1.5 py-0.5 border border-[#ffb000] text-[#ffb000] hover:bg-[#ffb000] hover:text-black text-[8.5px] sm:text-[9px] font-bold transition cursor-pointer"
                     title="Сводка политического профиля"
                   >
                     [СВОДКА]
@@ -1546,7 +1649,7 @@ export default function App() {
                       terminalAudio.playSwitchClick();
                       setShowMapModal(true);
                     }}
-                    className="px-1.5 py-0.5 border border-[#ffb000] text-[#ffb000] hover:bg-[#ffb000] hover:text-black text-[9px] font-bold transition cursor-pointer"
+                    className="px-1 sm:px-1.5 py-0.5 border border-[#ffb000] text-[#ffb000] hover:bg-[#ffb000] hover:text-black text-[8.5px] sm:text-[9px] font-bold transition cursor-pointer"
                     title="Открыть тактический экран карты секторов"
                   >
                     [КАРТА]
@@ -1560,7 +1663,7 @@ export default function App() {
                     setScreen('hotline');
                   }}
                   disabled={hotlineUsedInAct[currentAct]}
-                  className={`px-1.5 py-0.5 border text-[9px] font-bold transition cursor-pointer ${
+                  className={`px-1 sm:px-1.5 py-0.5 border text-[8.5px] sm:text-[9px] font-bold transition cursor-pointer ${
                     hotlineUsedInAct[currentAct]
                       ? 'border-[#3a250a] text-[#553810] cursor-not-allowed'
                       : 'border-[#ffb000] text-[#ffb000] hover:bg-[#ffb000] hover:text-black'
@@ -1572,8 +1675,8 @@ export default function App() {
               </div>
 
               {/* MINI-TELEMETRY OF 4 SECTORS */}
-              <div className="flex items-center justify-between px-2 py-1 mb-1 border border-[#6e470b] bg-[#0c0803] text-[9px] md:text-[10px] font-mono select-none">
-                <div className="flex items-center space-x-1 md:space-x-2 overflow-x-auto py-0.5">
+              <div className="shrink-0 flex items-center justify-between px-1.5 sm:px-2 py-0.5 sm:py-1 mb-1 border border-[#6e470b] bg-[#0c0803] text-[8.5px] md:text-[10px] font-mono select-none">
+                <div className="flex items-center space-x-1 md:space-x-1.5 overflow-x-auto py-0.2">
                   {(['capital', 'miners', 'agrarian', 'autonomy'] as RegionId[]).map((rId) => {
                     const reg = regions[rId];
                     const isRiot = reg.tension >= 80;
@@ -1586,7 +1689,7 @@ export default function App() {
                           setShowMapModal(true);
                           terminalAudio.playTeletypeClick();
                         }}
-                        className={`px-1.5 py-0.5 border cursor-pointer transition font-bold flex items-center space-x-1 ${
+                        className={`px-1 sm:px-1.5 py-0.5 border cursor-pointer transition font-bold flex items-center space-x-0.5 sm:space-x-1 ${
                           isRiot
                             ? 'border-[#ff2a00] bg-[#ff2a00]/25 text-[#ff2a00] animate-pulse'
                             : isWarn
@@ -1597,7 +1700,7 @@ export default function App() {
                       >
                         <span>[{REGION_META[rId].short}: {reg.tension}%]</span>
                         {reg.curfewTurns > 0 && (
-                          <span className="text-[8px] text-[#33ff33]">●{reg.curfewTurns}Х</span>
+                          <span className="text-[7.5px] sm:text-[8px] text-[#33ff33]">●{reg.curfewTurns}Х</span>
                         )}
                       </button>
                     );
@@ -1609,14 +1712,14 @@ export default function App() {
                     terminalAudio.playSwitchClick();
                     setShowMapModal(true);
                   }}
-                  className="ml-1 px-1.5 py-0.5 border border-[#ffb000] bg-[#ffb000]/10 text-[#ffb000] hover:bg-[#ffb000] hover:text-black font-extrabold text-[9px] transition shrink-0 cursor-pointer"
+                  className="ml-1 px-1 sm:px-1.5 py-0.5 border border-[#ffb000] bg-[#ffb000]/10 text-[#ffb000] hover:bg-[#ffb000] hover:text-black font-extrabold text-[8.5px] sm:text-[9px] transition shrink-0 cursor-pointer"
                 >
-                  [КАРТА СЕКТОРОВ]
+                  [КАРТА]
                 </button>
               </div>
 
               {/* CENTRAL CARD STACK & SWIPEABLE CARD */}
-              <div className="relative flex-1 flex items-center justify-center min-h-[300px] my-0.5 touch-none">
+              <div className="relative flex-1 min-h-0 flex items-center justify-center my-0.5 touch-none overflow-hidden">
                 {/* Silhouette background sheets of upcoming dispatches */}
                 <div className="absolute w-[86%] h-[94%] border border-[#3d2607] rotate-2 pointer-events-none opacity-40 bg-[#0e0904]" />
                 <div className="absolute w-[86%] h-[94%] border border-[#3d2607] -rotate-2 pointer-events-none opacity-40 bg-[#0e0904]" />
@@ -1631,8 +1734,12 @@ export default function App() {
                     transform: `translateX(${dragX}px) rotate(${cardRotation}deg)`,
                     transition: isDragging ? 'none' : 'transform 0.35s cubic-bezier(0.34, 1.3, 0.64, 1)',
                   }}
-                  className={`relative z-10 w-[92%] h-[98%] max-h-[460px] border-2 p-2.5 flex flex-col justify-between cursor-grab active:cursor-grabbing bg-[#120c06] select-none shadow-[0_0_20px_rgba(0,0,0,0.8)] ${
-                    isEmergency ? 'border-[#ff2a00]' : 'border-[#ffb000]'
+                  className={`relative z-10 w-[94%] sm:w-[92%] h-full max-h-[460px] border-2 p-2 sm:p-2.5 flex flex-col justify-between cursor-grab active:cursor-grabbing select-none shadow-[0_0_20px_rgba(0,0,0,0.8)] ${
+                    currentCard.isSpecialReport
+                      ? 'border-[#ff2a00] bg-[#160806] shadow-[0_0_25px_rgba(255,42,0,0.4)]'
+                      : isEmergency
+                      ? 'border-[#ff2a00] bg-[#120c06]'
+                      : 'border-[#ffb000] bg-[#120c06]'
                   } ${
                     cardAnimating === 'left'
                       ? '-translate-x-[450px] -rotate-15 opacity-0 transition-all duration-240'
@@ -1643,46 +1750,75 @@ export default function App() {
                       : ''
                   }`}
                 >
+                  {/* KGB Special Report Banner Header */}
+                  {currentCard.isSpecialReport && (
+                    <div className="shrink-0 flex items-center justify-between px-1.5 py-0.5 mb-1 border border-[#ff2a00] bg-[#ff2a00]/20 text-[#ff2a00] font-mono text-[8.5px] sm:text-[9.5px] font-bold tracking-wider">
+                      <span className="flex items-center space-x-1">
+                        <span>⚔️🛡️</span>
+                        <span className="truncate">ОСОБАЯ ПАПКА УКГБ // ТОЛЬКО ЛИЧНО</span>
+                      </span>
+                      <span className="animate-pulse shrink-0 ml-1">● СОВ. СЕКРЕТНО</span>
+                    </div>
+                  )}
+
                   {/* Tilt decision stamp overlay */}
                   {dragX < -30 && (
-                    <div className="absolute top-4 right-4 z-20 px-2 py-1 border-2 border-[#ff2a00] bg-[#120c06]/90 text-[#ff2a00] font-black text-xs md:text-sm tracking-widest rotate-6 pointer-events-none">
+                    <div className="absolute top-3 right-3 sm:top-4 sm:right-4 z-20 px-2 py-0.5 sm:py-1 border-2 border-[#ff2a00] bg-[#120c06]/95 text-[#ff2a00] font-black text-xs md:text-sm tracking-widest rotate-6 pointer-events-none shadow-[0_0_10px_rgba(255,42,0,0.5)]">
                       {currentCard.leftChoice.label}
                     </div>
                   )}
                   {dragX > 30 && (
-                    <div className="absolute top-4 left-4 z-20 px-2 py-1 border-2 border-[#33ff33] bg-[#120c06]/90 text-[#33ff33] font-black text-xs md:text-sm tracking-widest -rotate-6 pointer-events-none">
+                    <div className="absolute top-3 left-3 sm:top-4 sm:left-4 z-20 px-2 py-0.5 sm:py-1 border-2 border-[#33ff33] bg-[#120c06]/95 text-[#33ff33] font-black text-xs md:text-sm tracking-widest -rotate-6 pointer-events-none shadow-[0_0_10px_rgba(51,255,51,0.5)]">
                       {currentCard.rightChoice.label}
                     </div>
                   )}
 
                   {/* Upper Half: Procedural SVG Dithered Portrait or Crisis Visual */}
-                  <div className="w-full flex-1 max-h-[175px] md:max-h-[195px] flex items-center justify-center border border-[#6e470b] bg-[#0a0603] p-1 overflow-hidden">
+                  <div
+                    className={`w-full flex-1 min-h-0 max-h-[125px] sm:max-h-[160px] md:max-h-[195px] flex items-center justify-center border p-1 overflow-hidden ${
+                      currentCard.isSpecialReport ? 'border-[#ff2a00] bg-[#0c0303]' : 'border-[#6e470b] bg-[#0a0603]'
+                    }`}
+                  >
                     <TerminalPortrait
                       archetype={currentCard.archetype}
-                      isEmergency={isEmergency}
+                      isEmergency={isEmergency || !!currentCard.isSpecialReport}
                     />
                   </div>
 
                   {/* Lower Half: Situation Text & Question strictly in Russian */}
-                  <div className="w-full mt-2 pt-2 border-t border-[#6e470b] flex flex-col justify-between flex-1">
+                  <div className="w-full mt-1 sm:mt-2 pt-1 sm:pt-1.5 border-t border-[#6e470b] flex flex-col justify-between flex-shrink">
                     <div>
                       {/* Sender position with Sector badge */}
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[9px] md:text-[10px] font-bold text-[#8c5b0f] tracking-wider truncate">
+                      <div className="flex items-center justify-between mb-0.5 sm:mb-1">
+                        <span
+                          className={`text-[9px] md:text-[10px] font-bold tracking-wider truncate ${
+                            currentCard.isSpecialReport ? 'text-[#ff5533]' : 'text-[#8c5b0f]'
+                          }`}
+                        >
                           ● {currentCard.senderTitle}
                         </span>
-                        <span className="text-[8px] md:text-[9px] px-1 py-0.5 border border-[#8c5b0f] text-[#ffb000] bg-[#160f08] font-bold shrink-0 ml-1">
+                        <span
+                          className={`text-[8px] md:text-[9px] px-1 py-0.2 border font-bold shrink-0 ml-1 ${
+                            currentCard.isSpecialReport
+                              ? 'border-[#ff2a00] text-[#ff2a00] bg-[#ff2a00]/15'
+                              : 'border-[#8c5b0f] text-[#ffb000] bg-[#160f08]'
+                          }`}
+                        >
                           [{regions[currentCard.region || 'capital'].name}]
                         </span>
                       </div>
                       {/* Telegram message */}
-                      <p className="text-[11px] md:text-[12px] font-mono leading-snug tracking-normal crt-amber-text uppercase line-clamp-5">
+                      <p
+                        className={`text-[10px] sm:text-[11px] md:text-[12px] font-mono leading-tight sm:leading-snug tracking-normal uppercase line-clamp-4 sm:line-clamp-5 ${
+                          currentCard.isSpecialReport ? 'text-[#ffddaa]' : 'crt-amber-text'
+                        }`}
+                      >
                         {currentCard.text}
                       </p>
                     </div>
 
                     {/* Hint with keyboard controls */}
-                    <div className="text-[9px] text-center text-[#8c5b0f] mt-1">
+                    <div className="text-[8.5px] sm:text-[9px] text-center text-[#8c5b0f] mt-0.5">
                       ◀ [A / ВЛЕВО] СВАЙП [ВПРАВО / D] ▶
                     </div>
                   </div>
@@ -1690,11 +1826,11 @@ export default function App() {
               </div>
 
               {/* BOTTOM NAVIGATION & SWIPE CHOICES BUTTONS */}
-              <div className="flex items-center justify-between px-1 py-1 text-xs font-mono my-0.5">
+              <div className="shrink-0 flex items-center justify-between px-1 py-0.5 sm:py-1 text-xs font-mono my-0.5">
                 {/* Left Choice Button */}
                 <button
                   onClick={() => applyChoice(true)}
-                  className={`flex-1 mr-1 p-2 border text-left transition cursor-pointer active:scale-98 ${
+                  className={`flex-1 mr-1 p-1.5 sm:p-2 border text-left transition cursor-pointer active:scale-98 ${
                     dragX < -30
                       ? 'border-[#ff2a00] bg-[#ff2a00]/15 text-[#ff2a00] font-bold'
                       : 'border-[#6e470b] text-[#ffb000] hover:border-[#ffb000] bg-[#0f0904]'
@@ -1702,7 +1838,7 @@ export default function App() {
                 >
                   <div className="flex items-center space-x-1">
                     <span className="text-xs">◀</span>
-                    <span className="text-[10px] md:text-[11px] font-bold truncate">
+                    <span className="text-[9.5px] sm:text-[10px] md:text-[11px] font-bold truncate">
                       {currentCard.leftChoice.label}
                     </span>
                   </div>
@@ -1711,14 +1847,14 @@ export default function App() {
                 {/* Right Choice Button */}
                 <button
                   onClick={() => applyChoice(false)}
-                  className={`flex-1 ml-1 p-2 border text-right transition cursor-pointer active:scale-98 ${
+                  className={`flex-1 ml-1 p-1.5 sm:p-2 border text-right transition cursor-pointer active:scale-98 ${
                     dragX > 30
                       ? 'border-[#33ff33] bg-[#33ff33]/15 text-[#33ff33] font-bold'
                       : 'border-[#6e470b] text-[#ffb000] hover:border-[#ffb000] bg-[#0f0904]'
                   }`}
                 >
                   <div className="flex items-center justify-end space-x-1">
-                    <span className="text-[10px] md:text-[11px] font-bold truncate">
+                    <span className="text-[9.5px] sm:text-[10px] md:text-[11px] font-bold truncate">
                       {currentCard.rightChoice.label}
                     </span>
                     <span className="text-xs">▶</span>
@@ -1727,7 +1863,7 @@ export default function App() {
               </div>
 
               {/* BOTTOM-MOST TERMINAL STATUS FRAME */}
-              <footer className="flex items-center justify-between px-2 py-1 border-t border-[#3d2607] text-[10px] md:text-xs font-mono crt-amber-dim bg-[#0a0704]">
+              <footer className="shrink-0 flex items-center justify-between px-2 py-0.5 sm:py-1 border-t border-[#3d2607] text-[9px] sm:text-[10px] md:text-xs font-mono crt-amber-dim bg-[#0a0704]">
                 <span>СЕРИЯ-89</span>
                 <span className="font-bold text-[#ffb000]">
                   ДНЕЙ ДО ФИНАЛА: {Math.max(0, 750 - daysSurvived)}
@@ -2721,7 +2857,7 @@ export default function App() {
         {isEmergency && <div className="absolute inset-0 crt-emergency-vignette z-25 pointer-events-none" />}
 
         {/* TASS Teletype Ticker Tape (1989-1991 Live World) */}
-        <div className="relative z-20 w-full border-t border-[#3d2607] bg-[#0c0703] px-2 py-1 flex items-center overflow-hidden font-mono text-[9px] md:text-[10px] crt-amber-text shadow-[0_0_8px_rgba(255,176,0,0.2)] select-none">
+        <div className="relative z-20 w-full shrink-0 border-t border-[#3d2607] bg-[#0c0703] px-2 py-1 flex items-center overflow-hidden font-mono text-[9px] md:text-[10px] crt-amber-text shadow-[0_0_8px_rgba(255,176,0,0.2)] select-none">
           <span className="shrink-0 font-bold bg-[#ffb000]/15 text-[#ffb000] px-1.5 py-0.5 border border-[#ffb000]/40 mr-2 tracking-wider">
             [ТАСС / СВОДКА]
           </span>
